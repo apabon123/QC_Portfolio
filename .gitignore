@@ -192,3 +192,18 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# QuantConnect Lean CLI
+/data/
+/backtests/
+storage/
+.storage/
+
+# JSON files (but keep config files)
+lean.json
+**/backtests/**/*.json
+**/data/**/*.json
+
+# IDE and OS files not in individual project .gitignores
+.idea/
+.vscode/
