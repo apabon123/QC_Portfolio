@@ -966,28 +966,55 @@ class PortfolioExecutionManager:
             self.algorithm.Log(f"ERROR tracking rollover event: {str(e)}")
     
     def _is_symbol_ready_for_execution(self, symbol):
-        """Check if a symbol is ready for execution with proper data validation."""
+        """Check if a symbol is ready for execution using QC native methods."""
         try:
-            # Check if symbol exists in securities
+            # Use QC native contract resolver if available
+            if hasattr(self.algorithm, 'contract_resolver') and self.algorithm.contract_resolver:
+                validation_result = self.algorithm.contract_resolver.validate_symbol_for_trading(symbol)
+                
+                if validation_result['valid']:
+                    # Log QC native properties for diagnostics
+                    qc_props = validation_result.get('qc_properties', {})
+                    trading_symbol = validation_result.get('trading_symbol', symbol)
+                    
+                    if trading_symbol != symbol:
+                        self.algorithm.Log(f"QC Native: {symbol} -> {trading_symbol} for execution")
+                    
+                    return True
+                else:
+                    # Log why validation failed with QC diagnostics
+                    reason = validation_result.get('reason', 'Unknown')
+                    qc_props = validation_result.get('qc_properties', {})
+                    
+                    self.algorithm.Log(f"QC Native: Execution validation failed for {symbol}: {reason}")
+                    if qc_props:
+                        self.algorithm.Log(f"  QC Properties: {qc_props}")
+                    
+                    return False
+            
+            # Fallback to basic QC validation if contract resolver unavailable
             if symbol not in self.algorithm.Securities:
                 return False
             
-            # Get mapped contract
-            mapped_contract = self.algorithm.Securities[symbol].Mapped
+            # Use QC's native .Mapped property directly
+            security = self.algorithm.Securities[symbol]
+            mapped_contract = getattr(security, 'Mapped', None)
+            
             if mapped_contract is None:
+                self.algorithm.Log(f"QC Native Fallback: No .Mapped contract for {symbol}")
                 return False
             
-            # Check if mapped contract exists and has data
+            # Check mapped contract with QC native properties
             if mapped_contract not in self.algorithm.Securities:
                 return False
             
-            security = self.algorithm.Securities[mapped_contract]
+            mapped_security = self.algorithm.Securities[mapped_contract]
             
-            # Check if security has data and valid price
-            if not security.HasData:
+            # Use QC's native validation properties
+            if not getattr(mapped_security, 'HasData', False):
                 return False
             
-            if not hasattr(security, 'Price') or security.Price is None or security.Price <= 0:
+            if not getattr(mapped_security, 'Price', None) or mapped_security.Price <= 0:
                 return False
             
             return True

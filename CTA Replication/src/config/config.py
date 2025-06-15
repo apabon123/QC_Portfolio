@@ -38,6 +38,7 @@ from src.components.config_execution_plumbing import (
     EXECUTION_CONFIG,
     MONITORING_CONFIG,
     CONSTRAINTS_CONFIG,
+    CONTINUOUS_CONTRACTS_CONFIG,
     get_futures_rollover_config,
     validate_futures_config
 )
@@ -70,7 +71,8 @@ def get_full_config():
         'qc_native': QC_NATIVE_CONFIG,
         'execution': EXECUTION_CONFIG,
         'monitoring': MONITORING_CONFIG,
-        'constraints': CONSTRAINTS_CONFIG
+        'constraints': CONSTRAINTS_CONFIG,
+        'continuous_contracts': CONTINUOUS_CONTRACTS_CONFIG
     }
 
 # =============================================================================

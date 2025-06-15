@@ -201,6 +201,35 @@ CONSTRAINTS_CONFIG = {
 }
 
 # =============================================================================
+# CONTINUOUS CONTRACT MANAGEMENT CONFIGURATION
+# =============================================================================
+CONTINUOUS_CONTRACTS_CONFIG = {
+    # Fallback Mapping Configuration
+    'enable_fallback_mapping': True,           # Enable fallback when continuous contracts fail
+    'max_days_without_data': 3,                # Maximum days to wait before activating fallback
+    'prefer_front_month': True,                # Prefer front month contracts as fallback
+    'validate_underlying_data': True,          # Validate underlying contract data quality
+    'log_mapping_changes': True,               # Log when mappings change
+    'retry_failed_continuous': True,           # Retry failed continuous contracts
+    
+    # Symbol Resolution
+    'auto_discover_underlying': True,          # Automatically discover underlying contracts
+    'update_mappings_on_securities_change': True,  # Update mappings when securities change
+    'validate_mappings_frequency': 'daily',    # How often to validate mappings
+    
+    # Fallback Strategy
+    'fallback_strategy': 'best_data_quality',  # Strategy for selecting fallback contracts
+    'min_underlying_data_history': 30,         # Minimum days of data for underlying contracts
+    'max_underlying_contracts_per_continuous': 5,  # Maximum underlying contracts to track
+    
+    # Monitoring and Alerting
+    'alert_on_continuous_failure': True,       # Alert when continuous contracts fail
+    'alert_on_fallback_activation': True,      # Alert when fallback is activated
+    'track_fallback_performance': True,        # Track performance impact of fallbacks
+    'log_level': 'INFO'                        # Logging level for continuous contract manager
+}
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
