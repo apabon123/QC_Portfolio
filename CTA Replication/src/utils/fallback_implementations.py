@@ -55,13 +55,21 @@ class FallbackComponents:
                 self.algorithm.Log("Minimal orchestrator initialized")
             
             def generate_portfolio_targets(self):
-                return {}
+                return {'status': 'minimal_mode', 'targets': {}}
             
             def update_during_warmup(self, slice):
+                # Minimal implementation - just pass
                 pass
             
             def update_with_data(self, slice):
+                # Minimal implementation - just pass
                 pass
+            
+            def weekly_rebalance(self):
+                return {'status': 'minimal_mode', 'targets': {}}
+            
+            def monthly_rebalance(self):
+                return {'status': 'minimal_mode', 'targets': {}}
         
         return MinimalOrchestrator(algorithm)
     
@@ -95,4 +103,34 @@ class FallbackComponents:
             def generate_final_algorithm_report(self):
                 self.algorithm.Log("Minimal final report")
         
-        return MinimalSystemReporter(algorithm) 
+        return MinimalSystemReporter(algorithm)
+    
+    def create_minimal_futures_manager(self, algorithm):
+        """Create minimal futures manager."""
+        class MinimalFuturesManager:
+            def __init__(self, algorithm):
+                self.algorithm = algorithm
+                self.futures_tickers = ['ES', 'NQ', 'ZN']
+                self.futures_symbols = []
+                self.futures_data = {}
+            
+            def initialize_universe(self):
+                self.algorithm.Log("Minimal futures manager: initialization")
+                try:
+                    # Try to add at least ES
+                    future = self.algorithm.AddFuture('ES')
+                    if future:
+                        future.SetFilter(0, 182)
+                        self.futures_symbols.append(future.Symbol)
+                        self.futures_data[future.Symbol] = {'ticker': 'ES'}
+                        self.algorithm.Log("Minimal futures manager: Added ES")
+                except:
+                    self.algorithm.Log("Minimal futures manager: Could not add futures")
+            
+            def get_symbols_for_strategy(self, strategy_name):
+                return self.futures_symbols
+            
+            def get_tickers_for_strategy(self, strategy_name):
+                return self.futures_tickers
+        
+        return MinimalFuturesManager(algorithm) 

@@ -173,21 +173,28 @@ class KestnerCTAStrategy:
     def OnSecuritiesChanged(self, changes):
         """
         Handle security changes from the universe.
-        This is now the primary entry point for initializing SymbolData.
+        FIXED: Only track continuous contracts, ignore rollover-specific contracts.
         """
         for security in changes.AddedSecurities:
             symbol = security.Symbol
-            if symbol not in self.symbol_data:
-                self.algorithm.Log(f"{self.name}: Initializing SymbolData for new security: {symbol}")
-                try:
-                    self.symbol_data[symbol] = self.SymbolData(
-                        self.algorithm,
-                        symbol,
-                        self.config_dict['momentum_lookbacks'],
-                        self.config_dict['volatility_lookback_days']
-                    )
-                except Exception as e:
-                    self.algorithm.Error(f"{self.name}: Failed to create SymbolData for {symbol}: {e}")
+            symbol_str = str(symbol)
+            
+            # NEW: Only track continuous contracts (start with '/')
+            if symbol_str.startswith('/') or symbol_str.startswith('futures/'):
+                if symbol not in self.symbol_data:
+                    self.algorithm.Log(f"{self.name}: Initializing SymbolData for continuous contract: {symbol}")
+                    try:
+                        self.symbol_data[symbol] = self.SymbolData(
+                            self.algorithm,
+                            symbol,
+                            self.config_dict['momentum_lookbacks'],
+                            self.config_dict['volatility_lookback_days']
+                        )
+                    except Exception as e:
+                        self.algorithm.Error(f"{self.name}: Failed to create SymbolData for {symbol}: {e}")
+            else:
+                # Log that we're skipping rollover contracts
+                self.algorithm.Log(f"{self.name}: Skipping rollover contract in OnSecuritiesChanged: {symbol_str}")
 
         for security in changes.RemovedSecurities:
             if security.Symbol in self.symbol_data:
@@ -214,6 +221,10 @@ class KestnerCTAStrategy:
             if hasattr(slice_data, 'Time'):
                 self.last_update_time = slice_data.Time
             
+            # Validate slice data before processing
+            if not self._validate_slice_data(slice_data):
+                return  # Skip update if no valid data
+            
             # Log update occasionally for debugging
             if self.algorithm.Time.day % 7 == 0 and self.algorithm.Time.hour == 16:  # Weekly logging
                 ready_count = len([sd for sd in self.symbol_data.values() if sd.IsReady])
@@ -222,38 +233,104 @@ class KestnerCTAStrategy:
         except Exception as e:
             self.algorithm.Error(f"{self.name}: Error in update: {str(e)}")
     
-    def generate_targets(self):
+    def _validate_slice_data(self, slice_data):
         """
-        Generate position targets (REQUIRED by orchestrator).
-        
-        This is the main method called by the orchestrator to get trading signals.
-        
-        Returns:
-            dict: {symbol: target_weight} for each tradeable symbol
+        OPTIMIZED validation using centralized DataIntegrityChecker
+        Leverage QC's built-in validation + centralized logic
         """
         try:
-            self.algorithm.Log(f"{self.name}: Generating targets...")
+            # Use centralized data integrity checker if available
+            if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
+                # Use the centralized, QC-optimized validation
+                return self.algorithm.data_integrity_checker.validate_slice(slice_data) is not None
             
-            # Use the existing generate_signals method
-            targets = self.generate_signals()
+            # Fallback: Use QC's built-in validation methods
+            if not slice_data or not hasattr(slice_data, 'Bars'):
+                return False
             
-            # Store current targets
-            self.current_targets = targets.copy()
+            # Check if any of our symbols have valid data using QC's built-in properties
+            valid_symbols = 0
+            for symbol in self.symbol_data.keys():
+                if slice_data.Contains(symbol) and symbol in slice_data.Bars:
+                    # LEVERAGE QC'S BUILT-IN VALIDATION:
+                    if symbol in self.algorithm.Securities:
+                        security = self.algorithm.Securities[symbol]
+                        
+                        # Use QC's HasData and IsTradable properties
+                        if security.HasData and security.IsTradable:
+                            bar = slice_data.Bars[symbol]
+                            if bar and bar.Close > 0:
+                                valid_symbols += 1
             
-            if targets:
-                self.algorithm.Log(f"{self.name}: Generated {len(targets)} targets")
-                for symbol, weight in targets.items():
-                    symbol_str = str(symbol) if not isinstance(symbol, str) else symbol
-                    direction = "LONG" if weight > 0 else "SHORT"
-                    self.algorithm.Log(f"  {symbol_str}: {direction} {abs(weight):.3f}")
-            else:
-                self.algorithm.Log(f"{self.name}: No targets generated")
-            
-            return targets
+            return valid_symbols > 0
             
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error in generate_targets: {str(e)}")
+            self.algorithm.Error(f"{self.name}: Error validating slice data: {str(e)}")
+            return False
+    
+    def generate_targets(self):
+        """
+        Generate portfolio targets based on momentum signals.
+        FIXED: Only generate signals for continuous contracts, ignore rollover-specific contracts.
+        """
+        self.algorithm.Log(f"{self.name}: Generating targets...")
+        
+        # Get list of ready symbols - FILTER FOR CONTINUOUS CONTRACTS ONLY
+        all_symbols = self._get_liquid_symbols()
+        
+        # NEW: Filter to only include continuous contracts (start with '/')
+        continuous_symbols = []
+        for symbol in all_symbols:
+            symbol_str = str(symbol)
+            if symbol_str.startswith('/') or symbol_str.startswith('futures/'):
+                continuous_symbols.append(symbol)
+            else:
+                # Log that we're skipping this symbol
+                self.algorithm.Log(f"{self.name}: Skipping rollover contract: {symbol_str}")
+        
+        self.algorithm.Log(f"{self.name}: Ready symbols: {[str(s) for s in continuous_symbols]}")
+        
+        if not continuous_symbols:
+            self.algorithm.Log(f"{self.name}: No continuous contracts ready for signal generation")
             return {}
+        
+        # Generate signals for continuous contracts only
+        raw_signals = self.generate_signals()
+        
+        # Filter raw signals to only include continuous contracts
+        filtered_signals = {}
+        for symbol, signal in raw_signals.items():
+            symbol_str = str(symbol)
+            if symbol_str.startswith('/') or symbol_str.startswith('futures/'):
+                filtered_signals[symbol] = signal
+        
+        if not filtered_signals:
+            self.algorithm.Log(f"{self.name}: No signals generated for continuous contracts")
+            return {}
+        
+        self.algorithm.Log(f"{self.name}: Generated {len(filtered_signals)} raw signals")
+        
+        # Apply position limits and risk controls to filtered signals only
+        limited_signals = self._apply_position_limits(filtered_signals)
+        
+        # Apply volatility targeting to create final targets
+        final_targets = self._apply_volatility_targeting(limited_signals)
+        
+        # Validate final targets
+        validated_targets = self._validate_trade_sizes(final_targets)
+        
+        # Log summary
+        self._log_signal_summary(validated_targets, filtered_signals)
+        
+        # Store current targets for strategy state tracking
+        self.current_targets = validated_targets.copy()
+        
+        self.algorithm.Log(f"{self.name}: Generated {len(validated_targets)} targets")
+        for symbol, weight in validated_targets.items():
+            direction = "LONG" if weight > 0 else "SHORT" if weight < 0 else "FLAT"
+            self.algorithm.Log(f"  {str(symbol)}: {direction} {abs(weight):.3f}")
+        
+        return validated_targets
     
     def get_exposure(self):
         """
@@ -280,6 +357,42 @@ class KestnerCTAStrategy:
             'num_positions': len(self.current_targets),
             'largest_position': largest
         }
+    
+    @property
+    def IsAvailable(self):
+        """
+        Check if strategy is available for trading.
+        
+        A strategy is available when:
+        1. It has ready symbols for signal generation
+        2. All internal data structures are properly initialized
+        3. No critical errors have occurred
+        
+        Returns:
+            bool: True if strategy can generate valid trading signals
+        """
+        try:
+            # Check if we have any ready symbols
+            ready_symbols = self._get_liquid_symbols()
+            if not ready_symbols:
+                return False
+            
+            # Check if symbol data is properly initialized
+            if not self.symbol_data:
+                return False
+            
+            # Check if at least one symbol has sufficient data for signal generation
+            symbols_with_data = 0
+            for symbol in ready_symbols:
+                if symbol in self.symbol_data and self.symbol_data[symbol].IsReady:
+                    symbols_with_data += 1
+            
+            # Strategy is available if at least one symbol is ready
+            return symbols_with_data > 0
+            
+        except Exception as e:
+            self.algorithm.Log(f"{self.name}: IsAvailable check failed: {str(e)}")
+            return False
     
     # ============================================================================
     # KESTNER STRATEGY IMPLEMENTATION (COMPLETE)
@@ -473,6 +586,10 @@ class KestnerCTAStrategy:
             # Track data quality
             self.data_points_received = 0
             self.last_update_time = None
+            
+            # Data availability tracking - CRITICAL FOR TRADING DECISIONS
+            self.has_sufficient_data = True  # Assume true until proven otherwise
+            self.data_availability_error = None
 
             # 3) Attach a TradeBarConsolidator for daily bars
             try:
@@ -492,19 +609,13 @@ class KestnerCTAStrategy:
                 history = self.algorithm.History(self.symbol, self.volLookbackDays + max(self.lookbackWeeksList) * 7, Resolution.Daily)
                 
                 if history.empty:
-                    self.algorithm.Log(f"SymbolData {self.symbol}: No historical data available. Creating mock data for testing.")
-                    # Create mock data for testing when no real data is available
-                    self._create_mock_data()
+                    self.algorithm.Error(f"CRITICAL: SymbolData {self.symbol} - No historical data available")
+                    self.algorithm.Error(f"TRADING DECISION RISK: Cannot initialize {self.symbol} without real market data")
+                    self.has_sufficient_data = False
+                    self.data_availability_error = "No historical data available"
                     return
                 
-                # Debug: Check what we got
-                self.algorithm.Log(f"SymbolData {self.symbol}: History shape: {history.shape}")
-                self.algorithm.Log(f"SymbolData {self.symbol}: History columns: {list(history.columns)}")
-                self.algorithm.Log(f"SymbolData {self.symbol}: First few close prices: {history['close'].head().tolist()}")
-                self.algorithm.Log(f"SymbolData {self.symbol}: Last few close prices: {history['close'].tail().tolist()}")
-                
                 # Update rolling windows with historical data
-                # QuantConnect History returns a DataFrame, so we need to iterate through rows properly
                 for index, row in history.iterrows():
                     close_price = row['close']
                     open_price = row['open']
@@ -518,64 +629,37 @@ class KestnerCTAStrategy:
                     
                     self.data_points_received += 1
 
-                # Debug: Check what got added to windows
-                self.algorithm.Log(f"SymbolData {self.symbol}: Price window count: {self.price_window.Count}")
-                self.algorithm.Log(f"SymbolData {self.symbol}: Returns window count: {self.ret_window.Count}")
-                if self.price_window.Count > 0:
-                    self.algorithm.Log(f"SymbolData {self.symbol}: First few prices in window: {[self.price_window[i] for i in range(min(5, self.price_window.Count))]}")
-                if self.ret_window.Count > 0:
-                    self.algorithm.Log(f"SymbolData {self.symbol}: First few returns in window: {[self.ret_window[i] for i in range(min(5, self.ret_window.Count))]}")
-
-                self.algorithm.Log(f"SymbolData {self.symbol}: Initialized with {len(history)} historical bars (vol lookback: {self.volLookbackDays} days from config)")
+                self.algorithm.Log(f"SymbolData {self.symbol}: Initialized with {len(history)} historical bars")
 
             except Exception as e:
-                self.algorithm.Error(f"SymbolData {self.symbol}: History initialization error: {str(e)}")
-                # Fallback to mock data if history fails
-                self.algorithm.Log(f"SymbolData {self.symbol}: Falling back to mock data for testing.")
-                self._create_mock_data()
+                self.algorithm.Error(f"CRITICAL: SymbolData {self.symbol} - History initialization error: {str(e)}")
+                self.algorithm.Error(f"TRADING DECISION RISK: Cannot initialize {self.symbol} due to data access failure")
+                self.has_sufficient_data = False
+                self.data_availability_error = f"History initialization error: {str(e)}"
 
-        def _create_mock_data(self):
-            """Create mock historical data for testing when real data is not available."""
-            import random
-            
-            # Create realistic price series with trend and volatility
-            base_price = 2000.0  # Starting price for ES
-            total_days = self.volLookbackDays + max(self.lookbackWeeksList) * 7
-            
-            self.algorithm.Log(f"SymbolData {self.symbol}: Creating {total_days} days of mock data")
-            
-            for i in range(total_days):
-                # Create trending price with random walk
-                trend = 0.0002  # Small upward trend
-                volatility = 0.015  # 1.5% daily volatility
-                
-                # Random daily return
-                daily_return = trend + random.gauss(0, volatility)
-                
-                # Calculate new price
-                if i == 0:
-                    price = base_price
-                else:
-                    price = base_price * (1 + daily_return)
-                    base_price = price
-                
-                # Add to windows
-                self.price_window.Add(price)
-                self.ret_window.Add(daily_return)
-                self.data_points_received += 1
-            
-            self.algorithm.Log(f"SymbolData {self.symbol}: Mock data created - Price range: {min([self.price_window[i] for i in range(self.price_window.Count)]):.2f} to {max([self.price_window[i] for i in range(self.price_window.Count)]):.2f}")
-            self.algorithm.Log(f"SymbolData {self.symbol}: Mock data - Return range: {min([self.ret_window[i] for i in range(self.ret_window.Count)]):.4f} to {max([self.ret_window[i] for i in range(self.ret_window.Count)]):.4f}")
+
 
         @property
         def IsReady(self):
-            """Check if all data windows are ready."""
+            """Check if all data windows are ready - NO MOCK DATA"""
+            # CRITICAL: Check if we have sufficient real data first
+            if not self.has_sufficient_data:
+                return False
+            
             return self.price_window.IsReady and self.ret_window.IsReady
 
         def OnDataConsolidated(self, sender, bar: TradeBar):
             """Event handler for daily consolidated data."""
             self.price_window.Add(bar.Close)
-            self.ret_window.Add((bar.Close / bar.Open) - 1)
+            
+            # Calculate daily return with zero-division protection
+            if bar.Open != 0:
+                daily_return = (bar.Close / bar.Open) - 1
+                self.ret_window.Add(daily_return)
+            else:
+                # If open is zero, use 0% return (no change)
+                self.ret_window.Add(0.0)
+                
             self.data_points_received += 1
         
         def GetMomentum(self, lookbackWeeks):

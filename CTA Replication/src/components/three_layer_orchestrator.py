@@ -4,9 +4,9 @@ from AlgorithmImports import *
 from collections import deque
 
 # Import component modules
-from strategy_loader import StrategyLoader
-from layer_two_allocator import LayerTwoAllocator  
-from layer_three_risk_manager import LayerThreeRiskManager
+from .strategy_loader import StrategyLoader
+from .layer_two_allocator import LayerTwoAllocator  
+from ..risk.layer_three_risk_manager import LayerThreeRiskManager
 
 class ThreeLayerOrchestrator:
     """
@@ -321,20 +321,44 @@ class ThreeLayerOrchestrator:
                 return strategy_targets
             
             loaded_strategies = self.strategy_loader.get_strategy_objects()
-            self.algorithm.Log(f"LAYER 1: Generating signals from {len(loaded_strategies)} strategies")
+            
+            # Log strategy availability status
+            available_count = 0
+            for strategy_name, strategy in loaded_strategies.items():
+                if hasattr(strategy, 'IsAvailable'):
+                    is_available = strategy.IsAvailable
+                    status = "AVAILABLE" if is_available else "NOT_AVAILABLE"
+                    if is_available:
+                        available_count += 1
+                else:
+                    status = "NO_AVAILABILITY_CHECK"
+                    available_count += 1  # Assume available if no check
+                
+                self.algorithm.Log(f"LAYER 1: {strategy_name} - {status}")
+            
+            self.algorithm.Log(f"LAYER 1: Generating signals from {available_count}/{len(loaded_strategies)} available strategies")
             
             for strategy_name, strategy in loaded_strategies.items():
                 try:
+                    # ENHANCED: Check strategy availability before generating targets
+                    if hasattr(strategy, 'IsAvailable') and not strategy.IsAvailable:
+                        self.algorithm.Log(f"LAYER 1: {strategy_name} not available - skipping signal generation")
+                        continue
+                    
                     if hasattr(strategy, 'generate_targets'):
                         targets = strategy.generate_targets()
                         if targets:
                             strategy_targets[strategy_name] = targets
                             self.algorithm.Log(f"LAYER 1: {strategy_name} generated {len(targets)} targets")
+                        else:
+                            self.algorithm.Log(f"LAYER 1: {strategy_name} generated no targets")
                     elif hasattr(strategy, 'get_target_weights'):
                         targets = strategy.get_target_weights()
                         if targets:
                             strategy_targets[strategy_name] = targets
                             self.algorithm.Log(f"LAYER 1: {strategy_name} generated {len(targets)} targets")
+                        else:
+                            self.algorithm.Log(f"LAYER 1: {strategy_name} generated no targets")
                     else:
                         self.algorithm.Log(f"LAYER 1: {strategy_name} has no target generation method")
                         
@@ -362,35 +386,34 @@ class ThreeLayerOrchestrator:
                 self.algorithm.Log("LAYER 2: No strategy targets to process")
                 return {}
             
-            # Get current allocations
-            allocations = self.allocator.get_current_allocations()
-            self.algorithm.Log(f"LAYER 2: Using allocations: {allocations}")
+            # ENHANCED: Update strategy performance tracking for Sharpe calculations
+            self._update_strategy_performance_tracking(strategy_targets)
             
-            # Combine signals with allocations
-            combined_targets = {}
+            # Execute weekly allocation (includes performance-based updates)
+            result = self.allocator.execute_weekly_allocation(strategy_targets)
             
-            for strategy_name, targets in strategy_targets.items():
-                allocation = allocations.get(strategy_name, 0.0)
+            if result.get('status') == 'success':
+                combined_targets = result.get('combined_targets', {})
+                allocation_updates = result.get('allocation_updates', {})
                 
-                if allocation > 0:
-                    for symbol, weight in targets.items():
-                        if symbol not in combined_targets:
-                            combined_targets[symbol] = 0.0
-                        combined_targets[symbol] += weight * allocation
-            
-            # Filter out tiny positions
-            combined_targets = {
-                symbol: weight for symbol, weight in combined_targets.items() 
-                if abs(weight) > 0.001  # 0.1% minimum
-            }
-            
-            gross_exposure = sum(abs(w) for w in combined_targets.values())
-            net_exposure = sum(combined_targets.values())
-            
-            self.algorithm.Log(f"LAYER 2: Combined to {len(combined_targets)} positions")
-            self.algorithm.Log(f"LAYER 2: Gross: {gross_exposure:.1%}, Net: {net_exposure:.1%}")
-            
-            return combined_targets
+                # Log allocation updates if any
+                if allocation_updates:
+                    update_summary = []
+                    for strategy, update in allocation_updates.items():
+                        change = update['change']
+                        update_summary.append(f"{strategy}: {change:+.1%}")
+                    self.algorithm.Log(f"LAYER 2: Allocation updates: {', '.join(update_summary)}")
+                
+                gross_exposure = sum(abs(w) for w in combined_targets.values())
+                net_exposure = sum(combined_targets.values())
+                
+                self.algorithm.Log(f"LAYER 2: Combined to {len(combined_targets)} positions")
+                self.algorithm.Log(f"LAYER 2: Gross: {gross_exposure:.1%}, Net: {net_exposure:.1%}")
+                
+                return combined_targets
+            else:
+                self.algorithm.Log(f"LAYER 2: Allocation failed: {result.get('error', 'unknown')}")
+                return {}
             
         except Exception as e:
             self.algorithm.Error(f"LAYER 2: Execution error: {str(e)}")
@@ -402,17 +425,55 @@ class ThreeLayerOrchestrator:
             if not self.allocator:
                 return self._execute_layer2_rebalance(strategy_targets)
             
-            # Update allocations monthly
-            if hasattr(self.allocator, 'update_monthly_allocations'):
-                self.allocator.update_monthly_allocations()
+            # ENHANCED: Update strategy performance tracking for Sharpe calculations
+            self._update_strategy_performance_tracking(strategy_targets)
             
-            # Then proceed with normal combining
-            return self._execute_layer2_rebalance(strategy_targets)
+            # Execute monthly allocation with enhanced rebalancing
+            result = self.allocator.execute_monthly_allocation(strategy_targets)
+            
+            if result.get('status') == 'success':
+                combined_targets = result.get('combined_targets', {})
+                allocation_updates = result.get('allocation_updates', {})
+                
+                # Log allocation updates if any (more detailed for monthly)
+                if allocation_updates:
+                    self.algorithm.Log("LAYER 2: Monthly allocation updates:")
+                    for strategy, update in allocation_updates.items():
+                        old_alloc = update['old']
+                        new_alloc = update['new']
+                        change = update['change']
+                        self.algorithm.Log(f"  {strategy}: {old_alloc:.1%} → {new_alloc:.1%} ({change:+.1%})")
+                
+                gross_exposure = sum(abs(w) for w in combined_targets.values())
+                net_exposure = sum(combined_targets.values())
+                
+                self.algorithm.Log(f"LAYER 2: Monthly combined to {len(combined_targets)} positions")
+                self.algorithm.Log(f"LAYER 2: Gross: {gross_exposure:.1%}, Net: {net_exposure:.1%}")
+                
+                return combined_targets
+            else:
+                self.algorithm.Log(f"LAYER 2: Monthly allocation failed: {result.get('error', 'unknown')}")
+                return self._execute_layer2_rebalance(strategy_targets)  # Fallback
             
         except Exception as e:
             self.algorithm.Error(f"LAYER 2: Monthly execution error: {str(e)}")
             return self._execute_layer2_rebalance(strategy_targets)  # Fallback
     
+    def _update_strategy_performance_tracking(self, strategy_targets):
+        """Update strategy performance tracking for LAYER 2 Sharpe ratio calculations."""
+        try:
+            if not self.allocator or not hasattr(self.allocator, 'update_strategy_performance'):
+                return
+            
+            # Update performance tracking for each strategy
+            for strategy_name, targets in strategy_targets.items():
+                if targets:  # Only update if strategy has active targets
+                    self.allocator.update_strategy_performance(strategy_name, targets)
+            
+        except Exception as e:
+            # Silent error handling to avoid log spam
+            pass
+
     def _record_rebalance(self, rebalance_type, strategy_targets, combined_targets, final_targets):
         """Record rebalance history."""
         try:
@@ -545,3 +606,50 @@ class ThreeLayerOrchestrator:
         except Exception as e:
             self.algorithm.Error(f"ORCHESTRATOR: Runtime strategy removal error: {str(e)}")
             return False
+    
+    def update_during_warmup(self, slice):
+        """Update components during warmup period."""
+        try:
+            # During warmup, just log progress occasionally
+            if hasattr(self, 'strategy_loader') and self.strategy_loader:
+                # Let strategies process warmup data if they have such methods
+                for strategy_name, strategy in self.strategy_loader.strategy_objects.items():
+                    if hasattr(strategy, 'update_during_warmup'):
+                        try:
+                            strategy.update_during_warmup(slice)
+                        except Exception as e:
+                            self.algorithm.Error(f"ORCHESTRATOR: Error updating {strategy_name} during warmup: {str(e)}")
+        except Exception as e:
+            self.algorithm.Error(f"ORCHESTRATOR: Error in update_during_warmup: {str(e)}")
+    
+    def update_with_data(self, slice):
+        """Update components with new market data."""
+        try:
+            # Update strategies with new data
+            if hasattr(self, 'strategy_loader') and self.strategy_loader:
+                for strategy_name, strategy in self.strategy_loader.strategy_objects.items():
+                    if hasattr(strategy, 'update_with_data'):
+                        try:
+                            strategy.update_with_data(slice)
+                        except Exception as e:
+                            self.algorithm.Error(f"ORCHESTRATOR: Error updating {strategy_name} with data: {str(e)}")
+            
+            # Update other components if needed
+            if hasattr(self, 'allocator') and self.allocator:
+                if hasattr(self.allocator, 'update_with_data'):
+                    try:
+                        self.allocator.update_with_data(slice)
+                    except Exception as e:
+                        self.algorithm.Error(f"ORCHESTRATOR: Error updating allocator with data: {str(e)}")
+                        
+        except Exception as e:
+            self.algorithm.Error(f"ORCHESTRATOR: Error in update_with_data: {str(e)}")
+    
+    def generate_portfolio_targets(self):
+        """Generate portfolio targets - main entry point for rebalancing."""
+        try:
+            # This should be called by the main algorithm's rebalancing methods
+            return self.weekly_rebalance()
+        except Exception as e:
+            self.algorithm.Error(f"ORCHESTRATOR: Error generating portfolio targets: {str(e)}")
+            return {'status': 'failed', 'reason': str(e)}

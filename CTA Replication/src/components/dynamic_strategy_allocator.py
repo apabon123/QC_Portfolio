@@ -119,29 +119,50 @@ class DynamicStrategyAllocator:
     def calculate_optimal_allocations(self):
         """
         Calculate optimal allocations using simple Sharpe ratio proportional method
+        ENHANCED: Only allocate to available strategies
         
         Returns:
             dict: New allocation weights for each strategy
         """
-        sharpe_ratios = self.calculate_sharpe_ratios()
+        # STEP 1: Filter to only available strategies
+        available_strategies = {}
+        for strategy_name, strategy in self.strategies.items():
+            if hasattr(strategy, 'IsAvailable') and strategy.IsAvailable:
+                available_strategies[strategy_name] = strategy
+            else:
+                self.algorithm.Log(f"ALLOCATOR: Strategy {strategy_name} not available for allocation")
         
-        # Simple proportional allocation based on positive Sharpe ratios
-        positive_sharpes = {k: max(0, v) for k, v in sharpe_ratios.items()}
+        if not available_strategies:
+            self.algorithm.Log("ALLOCATOR: No strategies available - returning zero allocations")
+            return {strategy: 0.0 for strategy in self.strategies.keys()}
+        
+        # STEP 2: Calculate Sharpe ratios only for available strategies
+        sharpe_ratios = self.calculate_sharpe_ratios()
+        available_sharpes = {k: v for k, v in sharpe_ratios.items() if k in available_strategies}
+        
+        # STEP 3: Allocate only among available strategies
+        positive_sharpes = {k: max(0, v) for k, v in available_sharpes.items()}
         total_positive_sharpe = sum(positive_sharpes.values())
         
+        # Initialize all allocations to zero
+        new_allocations = {strategy: 0.0 for strategy in self.strategies.keys()}
+        
         if total_positive_sharpe > 0:
-            # Allocate proportionally to positive Sharpe ratios
-            new_allocations = {
-                strategy: sharpe / total_positive_sharpe 
-                for strategy, sharpe in positive_sharpes.items()
-            }
+            # Allocate proportionally to positive Sharpe ratios (available strategies only)
+            for strategy, sharpe in positive_sharpes.items():
+                new_allocations[strategy] = sharpe / total_positive_sharpe
         else:
-            # If no positive Sharpes, use equal weight
-            n_strategies = len(self.strategies)
-            new_allocations = {
-                strategy: 1.0 / n_strategies 
-                for strategy in self.strategies.keys()
-            }
+            # If no positive Sharpes, use equal weight among available strategies
+            n_available = len(available_strategies)
+            if n_available > 0:
+                equal_weight = 1.0 / n_available
+                for strategy in available_strategies.keys():
+                    new_allocations[strategy] = equal_weight
+        
+        # Log allocation decisions
+        available_count = len(available_strategies)
+        total_count = len(self.strategies)
+        self.algorithm.Log(f"ALLOCATOR: Allocated to {available_count}/{total_count} available strategies")
         
         return new_allocations
     

@@ -21,58 +21,53 @@ class PortfolioExecutionManager:
     """
     
     def __init__(self, algorithm, config_manager):
-        """Initialize the portfolio execution manager with full config compliance."""
+        """
+        Initialize Portfolio Execution Manager with comprehensive config support.
+        
+        Args:
+            algorithm: QuantConnect algorithm instance
+            config_manager: Configuration manager instance
+        """
         self.algorithm = algorithm
         self.config_manager = config_manager
-        self.config = config_manager.get_config()
         
-        # Execution tracking
-        self.total_trades_executed = 0
-        self.total_liquidations = 0
-        self.total_rollover_trades = 0
-        self.execution_errors = 0
+        # Load comprehensive configuration
+        config = config_manager.get_full_config()
+        self.execution_config = config.get('execution', {})
+        self.risk_config = config.get('portfolio_risk', {})
+        self.constraints_config = config.get('constraints', {})
         
-        # Performance tracking
+        # NEW: QC Native Features Configuration
+        self.qc_config = config.get('qc_native', {})
+        self.use_qc_transactions = self.qc_config.get('order_management', {}).get('use_qc_transactions', True)
+        self.use_qc_order_events = self.qc_config.get('order_management', {}).get('use_qc_order_events', True)
+        self.custom_fill_tracking = self.qc_config.get('order_management', {}).get('custom_fill_tracking', False)
+        self.log_order_events = self.qc_config.get('order_management', {}).get('log_order_events', True)
+        
+        # Trade tracking - keep for backward compatibility or when QC features disabled
         self.trade_history = []
-        self.position_history = []
+        self.total_trades_executed = 0
+        self.execution_errors = 0
         self.last_portfolio_snapshot = {}
         
-        # CONFIG-COMPLIANT: Load execution parameters from config
-        execution_config = self.config.get('execution', {})
-        self.execution_config = {
-            'min_trade_value': execution_config.get('min_trade_value', 1000),      # Config: $1,000
-            'min_weight_change': execution_config.get('min_weight_change', 0.01),  # Config: 1%
-            'max_single_order_value': execution_config.get('max_single_order_value', 50000000),
-            'order_type': execution_config.get('order_type', 'market'),
-            'max_portfolio_turnover': execution_config.get('max_portfolio_turnover', 2.0)
-        }
+        # Log configuration
+        self.algorithm.Log(f"ExecutionManager: QC Transactions {'ENABLED' if self.use_qc_transactions else 'DISABLED'}")
+        self.algorithm.Log(f"ExecutionManager: QC OrderEvents {'ENABLED' if self.use_qc_order_events else 'DISABLED'}")
+        self.algorithm.Log(f"ExecutionManager: Custom Fill Tracking {'ENABLED' if self.custom_fill_tracking else 'DISABLED'}")
         
-        # CONFIG-COMPLIANT: Load risk parameters from config
-        risk_config = self.config.get('portfolio_risk', {})
-        self.risk_config = {
-            'max_single_position': risk_config.get('max_single_position', 1.0),    # Config: 10.0 (1000%)
-            'daily_stop_loss': risk_config.get('daily_stop_loss', 0.2),            # Config: 20%
-            'max_drawdown_stop': risk_config.get('max_drawdown_stop', 0.75),       # Config: 75%
-            'target_portfolio_vol': risk_config.get('target_portfolio_vol', 0.5),  # Config: 50%
-            'max_leverage_multiplier': risk_config.get('max_leverage_multiplier', 100) # Config: 100x
-        }
-        
-        # CONFIG-COMPLIANT: Load constraint parameters from config
-        constraints_config = self.config.get('constraints', {})
-        self.constraints_config = {
-            'min_capital': constraints_config.get('min_capital', 5000000),         # Config: $5M
-            'initial_capital': constraints_config.get('initial_capital', 10000000), # Config: $10M
-            'max_positions_per_strategy': constraints_config.get('max_positions_per_strategy', 10),
-            'max_total_positions': constraints_config.get('max_total_positions', 20)
-        }
-        
-        # Risk monitoring
-        self.last_risk_check = None
-        self.risk_alerts = []
-        
-        self.algorithm.Log("Portfolio Execution Manager initialized - CONFIG-COMPLIANT VERSION")
+        # Log configuration parameters
         self._log_config_parameters()
         self._log_capital_diagnostics()
+    
+    def _extract_ticker_from_symbol(self, symbol):
+        """Extract ticker from symbol - simplified since QC handles the heavy lifting."""
+        try:
+            # For continuous contracts, use the symbol directly
+            if hasattr(symbol, 'Value'):
+                return symbol.Value
+            return str(symbol)
+        except:
+            return str(symbol)
     
     def _log_config_parameters(self):
         """Log all config parameters being used for transparency."""
@@ -124,7 +119,8 @@ class PortfolioExecutionManager:
         self.algorithm.Log(f"  Rebalance Type: {rebalance_type}")
         self.algorithm.Log(f"  Final Targets: {len(final_targets)} positions")
         for symbol, weight in final_targets.items():
-            ticker = self.algorithm.futures_manager.futures_data.get(symbol, {}).get('ticker', symbol)
+            # Extract ticker from symbol string (e.g., "ES ABCDEFG" -> "ES")
+            ticker = str(symbol).split()[0] if ' ' in str(symbol) else str(symbol)
             self.algorithm.Log(f"    {ticker}: {weight:.1%}")
         
         if not final_targets:
@@ -177,7 +173,8 @@ class PortfolioExecutionManager:
         max_single_position = self.risk_config['max_single_position']
         for symbol, weight in final_targets.items():
             if abs(weight) > max_single_position:
-                ticker = self.algorithm.futures_manager.futures_data.get(symbol, {}).get('ticker', symbol)
+                # Extract ticker from symbol string
+                ticker = str(symbol).split()[0] if ' ' in str(symbol) else str(symbol)
                 reason = f'{ticker} position {weight:.1%} exceeds config limit {max_single_position:.1%}'
                 self.algorithm.Log(f"VALIDATION BLOCK: {reason}")
                 return {'valid': False, 'reason': reason}
@@ -243,6 +240,27 @@ class PortfolioExecutionManager:
         total_portfolio_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
         self.algorithm.Log(f"EXECUTION: Portfolio value for calculations: ${total_portfolio_value:,.0f}")
         
+        # Pre-filter targets to only include symbols with valid data
+        valid_targets = {}
+        for symbol, weight in final_targets.items():
+            if self._is_symbol_ready_for_execution(symbol):
+                valid_targets[symbol] = weight
+            else:
+                ticker = self._extract_ticker_from_symbol(symbol)
+                self.algorithm.Log(f"  SKIPPING {ticker}: No valid data available")
+                execution_summary['blocked_trades'].append({
+                    'ticker': ticker,
+                    'target_weight': weight,
+                    'reason': 'No valid data available'
+                })
+        
+        if not valid_targets:
+            self.algorithm.Log("  No symbols with valid data - skipping execution")
+            return execution_summary
+        
+        self.algorithm.Log(f"  Executing {len(valid_targets)}/{len(final_targets)} symbols with valid data")
+        final_targets = valid_targets
+        
         # Execute target positions
         for symbol, target_weight in final_targets.items():
             self.algorithm.Log(f"EXECUTING: {symbol} target {target_weight:.1%}")
@@ -300,8 +318,6 @@ class PortfolioExecutionManager:
         
         # Update tracking
         self.total_trades_executed += execution_summary['orders_placed']
-        self.total_liquidations += execution_summary['liquidations']
-        self.total_rollover_trades += execution_summary['rollover_orders']
         self.execution_errors += execution_summary['execution_errors']
         
         # Log execution results
@@ -326,7 +342,7 @@ class PortfolioExecutionManager:
         
         # Get ticker for logging
         try:
-            result['ticker'] = self.algorithm.futures_manager.futures_data[symbol]['ticker']
+            result['ticker'] = self._extract_ticker_from_symbol(symbol)
         except:
             result['ticker'] = symbol
         
@@ -360,11 +376,27 @@ class PortfolioExecutionManager:
             self.algorithm.Log(f"    ERROR: {result['blocked_reason']}")
             return result
         
-        # Validate price
-        price = float(security.Price)
-        if price <= 0:
+        # Validate price with proper data checks
+        try:
+            # Check if security has received data and has a valid price
+            if not hasattr(security, 'Price') or security.Price is None:
+                result['error'] = True
+                result['blocked_reason'] = f"Security {mapped_contract} has no price data"
+                self.algorithm.Log(f"    ERROR: {result['blocked_reason']}")
+                return result
+            
+            # Additional check for data availability using QC's recommended approach
+            if not security.HasData or security.Price <= 0:
+                result['error'] = True
+                result['blocked_reason'] = f"Security {mapped_contract} has invalid price data: {security.Price}"
+                self.algorithm.Log(f"    ERROR: {result['blocked_reason']}")
+                return result
+            
+            price = float(security.Price)
+            
+        except Exception as e:
             result['error'] = True
-            result['blocked_reason'] = f"Invalid price: {price}"
+            result['blocked_reason'] = f"Error accessing price for {mapped_contract}: {str(e)}"
             self.algorithm.Log(f"    ERROR: {result['blocked_reason']}")
             return result
         
@@ -475,37 +507,54 @@ class PortfolioExecutionManager:
         return result
     
     def _liquidate_excluded_positions(self, final_targets):
-        """Liquidate positions not in final targets."""
+        """Liquidate positions not in final targets using QC's native futures handling."""
         liquidation_summary = {
             'liquidations': 0,
             'errors': 0,
             'liquidated_tickers': []
         }
         
-        current_symbols = set(final_targets.keys())
+        # Convert final_targets to use continuous contract symbols for comparison
+        target_continuous_symbols = set()
+        for symbol in final_targets.keys():
+            # If this is already a continuous contract symbol, use it directly
+            if hasattr(symbol, 'Canonical') and symbol.Canonical == symbol:
+                target_continuous_symbols.add(symbol)
+            else:
+                # Find the corresponding continuous contract symbol
+                for futures_symbol in self.algorithm.futures_manager.futures_symbols:
+                    if (futures_symbol in self.algorithm.Securities and 
+                        self.algorithm.Securities[futures_symbol].Mapped == symbol):
+                        target_continuous_symbols.add(futures_symbol)
+                        break
         
+        # Check each holding against our target continuous contracts
         for holding in self.algorithm.Portfolio.Values:
             if holding.Invested:
-                # Find corresponding symbol
-                holding_symbol = None
-                for symbol in self.algorithm.futures_manager.futures_data.keys():
-                    if (symbol in self.algorithm.Securities and 
-                        self.algorithm.Securities[symbol].Mapped == holding.Symbol):
-                        holding_symbol = symbol
-                        break
+                should_liquidate = True
                 
-                if holding_symbol and holding_symbol not in current_symbols:
+                # Check if this holding belongs to any of our target continuous contracts
+                for continuous_symbol in target_continuous_symbols:
+                    if continuous_symbol in self.algorithm.Securities:
+                        security = self.algorithm.Securities[continuous_symbol]
+                        # QC's Mapped property tells us the current active contract
+                        if security.Mapped == holding.Symbol:
+                            should_liquidate = False
+                            self.algorithm.Log(f"  KEEPING: {holding.Symbol} (mapped from {continuous_symbol})")
+                            break
+                
+                if should_liquidate:
                     try:
-                        ticker = self.algorithm.futures_manager.futures_data[holding_symbol]['ticker']
+                        ticker = str(holding.Symbol)
+                        self.algorithm.Log(f"  LIQUIDATING EXCLUDED: {ticker}")
                         self.algorithm.Liquidate(holding.Symbol, tag="ExecutionManager_Liquidate")
                         liquidation_summary['liquidations'] += 1
                         liquidation_summary['liquidated_tickers'].append(ticker)
-                        self.algorithm.Log(f"  LIQUIDATED: {ticker}")
                         
                         # Store liquidation in trade history
                         self.trade_history.append({
                             'time': self.algorithm.Time,
-                            'symbol': holding_symbol,
+                            'symbol': str(holding.Symbol),
                             'ticker': ticker,
                             'quantity': -holding.Quantity,
                             'trade_value': -holding.HoldingsValue,
@@ -610,7 +659,7 @@ class PortfolioExecutionManager:
         
         for symbol, weight in sorted_positions[:max_positions_to_show]:
             if abs(weight) > 0.001:  # Only meaningful positions
-                ticker = self.algorithm.futures_manager.futures_data.get(symbol, {}).get('ticker', symbol)
+                ticker = self._extract_ticker_from_symbol(symbol)
                 top_positions.append(f"{ticker}: {weight:+.1%}")
         
         if top_positions:
@@ -714,76 +763,120 @@ class PortfolioExecutionManager:
     
     def track_order_execution(self, order_event):
         """
-        Track order execution events - called from OnOrderEvent.
-        FIXED: Corrected float formatting issue.
+        Track order execution events - Updated to use QC's built-in features when configured
         
         Args:
             order_event: QuantConnect OrderEvent object
         """
         try:
             if order_event.Status == OrderStatus.Filled:
-                # FIXED: Use proper format for FillQuantity (which can be a float)
-                # Convert to int for display since futures quantities should be whole numbers
-                fill_quantity_int = int(order_event.FillQuantity)
+                # Always log filled orders if configured
+                if self.log_order_events:
+                    self._log_filled_order(order_event)
                 
-                # Log the filled order with corrected formatting
-                self.algorithm.Log(f"ORDER FILLED: {order_event.Symbol} "
-                                 f"{fill_quantity_int:+d} @ ${order_event.FillPrice:.2f} "
-                                 f"(${order_event.FillQuantity * order_event.FillPrice:+,.0f})")
+                # Use QC's built-in tracking or custom tracking based on config
+                if self.use_qc_transactions:
+                    self._process_qc_transaction(order_event)
+                elif self.custom_fill_tracking:
+                    self._process_custom_fill_tracking(order_event)
                 
-                # Update our tracking
-                fill_data = {
-                    'time': self.algorithm.Time,
-                    'symbol': str(order_event.Symbol),
-                    'quantity': order_event.FillQuantity,
-                    'fill_price': order_event.FillPrice,
-                    'fill_value': order_event.FillQuantity * order_event.FillPrice,
-                    'order_id': order_event.OrderId,
-                    'tag': order_event.Tag if hasattr(order_event, 'Tag') else 'Unknown'
-                }
+                self.total_trades_executed += 1
                 
-                # Add to trade history if not already there
-                existing_trade = None
-                for trade in self.trade_history:
-                    if (trade['time'] == self.algorithm.Time and 
-                        abs(trade['quantity'] - order_event.FillQuantity) < 0.1):
-                        existing_trade = trade
-                        break
-                
-                if not existing_trade:
-                    # Find ticker name
-                    ticker = "Unknown"
-                    for symbol in self.algorithm.futures_manager.futures_data.keys():
-                        if (symbol in self.algorithm.Securities and 
-                            self.algorithm.Securities[symbol].Mapped == order_event.Symbol):
-                            ticker = self.algorithm.futures_manager.futures_data[symbol]['ticker']
-                            break
-                    
-                    self.trade_history.append({
-                        'time': self.algorithm.Time,
-                        'symbol': str(order_event.Symbol),
-                        'ticker': ticker,
-                        'quantity': order_event.FillQuantity,
-                        'trade_value': fill_data['fill_value'],
-                        'price': order_event.FillPrice,
-                        'is_rollover': 'Rollover' in fill_data['tag'],
-                        'tag': fill_data['tag']
-                    })
-            
             elif order_event.Status in [OrderStatus.Canceled, OrderStatus.CancelPending]:
-                # FIXED: Use proper format for Quantity (convert to int for display)
-                quantity_int = int(order_event.Quantity) if hasattr(order_event, 'Quantity') else 0
-                self.algorithm.Log(f"ORDER CANCELED: {order_event.Symbol} {quantity_int:+d}")
+                if self.log_order_events:
+                    quantity_int = int(order_event.Quantity) if hasattr(order_event, 'Quantity') else 0
+                    self.algorithm.Log(f"ORDER CANCELED: {order_event.Symbol} {quantity_int:+d}")
                 self.execution_errors += 1
                 
             elif order_event.Status == OrderStatus.Invalid:
-                # FIXED: Use proper format for Quantity (convert to int for display)
-                quantity_int = int(order_event.Quantity) if hasattr(order_event, 'Quantity') else 0
-                self.algorithm.Log(f"ORDER INVALID: {order_event.Symbol} {quantity_int:+d} - {order_event.Message}")
+                if self.log_order_events:
+                    quantity_int = int(order_event.Quantity) if hasattr(order_event, 'Quantity') else 0
+                    self.algorithm.Log(f"ORDER INVALID: {order_event.Symbol} {quantity_int:+d} - {order_event.Message}")
                 self.execution_errors += 1
                 
         except Exception as e:
             self.algorithm.Log(f"ERROR in track_order_execution: {str(e)}")
+    
+    def _log_filled_order(self, order_event):
+        """Log filled order details"""
+        fill_quantity_int = int(order_event.FillQuantity)
+        fill_value = order_event.FillQuantity * order_event.FillPrice
+        
+        self.algorithm.Log(f"ORDER FILLED: {order_event.Symbol} "
+                         f"{fill_quantity_int:+d} @ ${order_event.FillPrice:.2f} "
+                         f"(${fill_value:+,.0f})")
+    
+    def _process_qc_transaction(self, order_event):
+        """Process using QC's built-in transaction tracking"""
+        # QC automatically tracks transactions in self.algorithm.Transactions
+        # We can access transaction history via self.algorithm.Transactions.GetOrders()
+        # and other methods when needed for reporting
+        
+        # Optional: Still track minimal info for our custom reporting
+        if self.custom_fill_tracking:
+            self._add_to_custom_history(order_event)
+    
+    def _process_custom_fill_tracking(self, order_event):
+        """Process using our custom fill tracking (fallback)"""
+        self._add_to_custom_history(order_event)
+    
+    def _add_to_custom_history(self, order_event):
+        """Add to our custom trade history"""
+        # Check if trade already exists
+        existing_trade = None
+        for trade in self.trade_history:
+            if (trade['time'] == self.algorithm.Time and 
+                abs(trade['quantity'] - order_event.FillQuantity) < 0.1):
+                existing_trade = trade
+                break
+        
+        if not existing_trade:
+            # Find ticker name
+            ticker = "Unknown"
+            for symbol in self.algorithm.futures_manager.futures_symbols:
+                if (symbol in self.algorithm.Securities and 
+                    self.algorithm.Securities[symbol].Mapped == order_event.Symbol):
+                    ticker = self._extract_ticker_from_symbol(symbol)
+                    break
+            
+            tag = order_event.Tag if hasattr(order_event, 'Tag') else 'Unknown'
+            
+            self.trade_history.append({
+                'time': self.algorithm.Time,
+                'symbol': str(order_event.Symbol),
+                'ticker': ticker,
+                'quantity': order_event.FillQuantity,
+                'trade_value': order_event.FillQuantity * order_event.FillPrice,
+                'price': order_event.FillPrice,
+                'is_rollover': 'Rollover' in tag,
+                'tag': tag,
+                'order_id': order_event.OrderId
+            })
+    
+    def get_qc_transaction_summary(self):
+        """Get transaction summary using QC's built-in features"""
+        if not self.use_qc_transactions:
+            return None
+        
+        try:
+            # Get orders from QC's transaction manager
+            orders = self.algorithm.Transactions.GetOrders()
+            filled_orders = [order for order in orders if order.Status == OrderStatus.Filled]
+            
+            total_trades = len(filled_orders)
+            total_value = sum(abs(order.Quantity * order.Price) for order in filled_orders if hasattr(order, 'Price'))
+            
+            return {
+                'total_orders': len(orders),
+                'filled_orders': total_trades,
+                'total_trade_value': total_value,
+                'open_orders': len([order for order in orders if order.Status in [OrderStatus.Submitted, OrderStatus.PartiallyFilled]]),
+                'canceled_orders': len([order for order in orders if order.Status == OrderStatus.Canceled]),
+                'last_order_time': max([order.Time for order in orders]) if orders else None
+            }
+        except Exception as e:
+            self.algorithm.Log(f"Error getting QC transaction summary: {str(e)}")
+            return None
 
     def get_position_summary(self):
         """Get current position summary with config compliance info."""
@@ -799,11 +892,11 @@ class PortfolioExecutionManager:
                 symbol = None
                 ticker = "Unknown"
                 
-                for sym in self.algorithm.futures_manager.futures_data.keys():
+                for sym in self.algorithm.futures_manager.futures_symbols:
                     if (sym in self.algorithm.Securities and 
                         self.algorithm.Securities[sym].Mapped == holding.Symbol):
                         symbol = sym
-                        ticker = self.algorithm.futures_manager.futures_data[sym]['ticker']
+                        ticker = self._extract_ticker_from_symbol(sym)
                         break
                 
                 if symbol:
@@ -832,3 +925,72 @@ class PortfolioExecutionManager:
             'constraints_config': self.constraints_config,
             'config_compliance_status': self.last_portfolio_snapshot.get('config_compliance', {})
         }
+
+    def track_rollover_event(self, old_symbol, new_symbol):
+        """
+        Track rollover events from QC's OnSymbolChangedEvents.
+        This is much cleaner than manual symbol matching.
+        """
+        try:
+            self.algorithm.Log(f"EXECUTION MANAGER: Tracking rollover {old_symbol} → {new_symbol}")
+            
+            # Store rollover event in trade history for reporting
+            self.trade_history.append({
+                'time': self.algorithm.Time,
+                'symbol': str(new_symbol),
+                'ticker': self._extract_ticker_from_symbol(new_symbol),
+                'quantity': 0,  # Rollover is position-neutral
+                'trade_value': 0,
+                'price': 0,
+                'is_rollover': True,
+                'tag': f'QC_Rollover_{old_symbol}_to_{new_symbol}',
+                'old_symbol': str(old_symbol),
+                'rollover_date': self.algorithm.Time.date()
+            })
+            
+            # Update any internal tracking if needed
+            if hasattr(self, 'rollover_events'):
+                self.rollover_events.append({
+                    'date': self.algorithm.Time,
+                    'old_symbol': str(old_symbol),
+                    'new_symbol': str(new_symbol)
+                })
+            else:
+                self.rollover_events = [{
+                    'date': self.algorithm.Time,
+                    'old_symbol': str(old_symbol),
+                    'new_symbol': str(new_symbol)
+                }]
+                
+        except Exception as e:
+            self.algorithm.Log(f"ERROR tracking rollover event: {str(e)}")
+    
+    def _is_symbol_ready_for_execution(self, symbol):
+        """Check if a symbol is ready for execution with proper data validation."""
+        try:
+            # Check if symbol exists in securities
+            if symbol not in self.algorithm.Securities:
+                return False
+            
+            # Get mapped contract
+            mapped_contract = self.algorithm.Securities[symbol].Mapped
+            if mapped_contract is None:
+                return False
+            
+            # Check if mapped contract exists and has data
+            if mapped_contract not in self.algorithm.Securities:
+                return False
+            
+            security = self.algorithm.Securities[mapped_contract]
+            
+            # Check if security has data and valid price
+            if not security.HasData:
+                return False
+            
+            if not hasattr(security, 'Price') or security.Price is None or security.Price <= 0:
+                return False
+            
+            return True
+            
+        except Exception as e:
+            return False

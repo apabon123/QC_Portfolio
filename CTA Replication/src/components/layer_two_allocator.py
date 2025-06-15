@@ -28,8 +28,14 @@ class LayerTwoAllocator:
         # Strategy allocation tracking
         self.strategy_allocations = {}
         self.strategy_bounds = {}
-        self.performance_history = defaultdict(deque)
         self.allocation_history = deque(maxlen=252)
+        
+        # ENHANCED: Strategy performance tracking for Sharpe calculations
+        self.strategy_returns = defaultdict(lambda: deque(maxlen=252))  # Store daily returns
+        self.portfolio_values = defaultdict(lambda: deque(maxlen=252))  # Track strategy portfolio values
+        self.last_portfolio_values = {}  # Last known portfolio value per strategy
+        self.performance_metrics = {}  # Cached performance metrics
+        self.risk_free_rate = 0.02  # 2% annual risk-free rate
         
         # CONFIG-COMPLIANT parameters
         self.lookback_days = self.config.get('lookback_days', 63)
@@ -226,28 +232,118 @@ class LayerTwoAllocator:
     
     def _calculate_performance_allocations(self, strategy_targets):
         """
-        Calculate new allocations based on strategy performance metrics.
+        ENHANCED: Calculate new allocations based on Sharpe ratio performance.
         
-        For now, this is a simplified implementation that maintains current allocations.
-        In a full implementation, this would:
+        Implementation of full performance-based allocation logic:
         1. Calculate Sharpe ratios for each strategy over lookback period
         2. Apply proportional allocation based on risk-adjusted returns
-        3. Consider correlation between strategies
+        3. Handle minimum track record requirements
         4. Apply minimum/maximum allocation constraints
         """
         try:
-            # Simplified implementation: maintain current allocations
-            # TODO: Implement full performance-based allocation logic
+            # Step 1: Calculate Sharpe ratios for each strategy
+            sharpe_ratios = self._calculate_strategy_sharpe_ratios(strategy_targets)
             
-            # Get current allocations as baseline
+            # Step 2: Check if any strategy has sufficient track record
+            sufficient_data = any(
+                len(self.strategy_returns[strategy]) >= self.min_track_record 
+                for strategy in strategy_targets.keys()
+            )
+            
+            # Step 3: Determine allocation method
+            if not sufficient_data:
+                # Not enough data - maintain current allocations with small adjustments
+                self.algorithm.Log("LAYER 2: Insufficient track record, maintaining allocations")
+                return self._get_conservative_allocations(strategy_targets)
+            
+            # Step 4: Apply Sharpe ratio proportional allocation
+            new_allocations = self._apply_sharpe_proportional_allocation(sharpe_ratios, strategy_targets)
+            
+            # Step 5: Log performance metrics (concise)
+            self._log_performance_update(sharpe_ratios, new_allocations)
+            
+            return new_allocations
+            
+        except Exception as e:
+            self.algorithm.Error(f"LAYER 2: Performance allocation error: {str(e)}")
+            return self.strategy_allocations.copy()
+    
+    def _calculate_strategy_sharpe_ratios(self, strategy_targets):
+        """Calculate Sharpe ratios for all strategies."""
+        sharpe_ratios = {}
+        
+        for strategy_name in strategy_targets.keys():
+            try:
+                returns = list(self.strategy_returns[strategy_name])
+                
+                if len(returns) < self.min_track_record:
+                    sharpe_ratios[strategy_name] = 0.0
+                    continue
+                
+                # Use only recent returns based on lookback period
+                recent_returns = returns[-self.lookback_days:] if len(returns) > self.lookback_days else returns
+                
+                if len(recent_returns) < 10:  # Minimum 10 days
+                    sharpe_ratios[strategy_name] = 0.0
+                    continue
+                
+                # Calculate Sharpe ratio
+                mean_return = np.mean(recent_returns)
+                std_return = np.std(recent_returns, ddof=1) if len(recent_returns) > 1 else 0.0
+                
+                if std_return > 0:
+                    # Annualized Sharpe ratio
+                    daily_risk_free = self.risk_free_rate / 252
+                    sharpe_ratio = (mean_return - daily_risk_free) / std_return * np.sqrt(252)
+                else:
+                    sharpe_ratio = 0.0
+                
+                sharpe_ratios[strategy_name] = sharpe_ratio
+                
+            except Exception as e:
+                sharpe_ratios[strategy_name] = 0.0
+        
+        return sharpe_ratios
+    
+    def _apply_sharpe_proportional_allocation(self, sharpe_ratios, strategy_targets):
+        """Apply proportional allocation based on positive Sharpe ratios."""
+        try:
+            # Step 1: Get positive Sharpe ratios only
+            positive_sharpes = {k: max(0.0, v) for k, v in sharpe_ratios.items()}
+            total_positive_sharpe = sum(positive_sharpes.values())
+            
+            new_allocations = {}
+            
+            # Step 2: Allocate based on positive Sharpe ratios
+            if total_positive_sharpe > 0.01:  # Minimum threshold
+                for strategy_name in strategy_targets.keys():
+                    sharpe = positive_sharpes.get(strategy_name, 0.0)
+                    allocation = sharpe / total_positive_sharpe
+                    new_allocations[strategy_name] = allocation
+            else:
+                # No positive Sharpe ratios - use equal weight with slight preference for current leaders
+                self.algorithm.Log("LAYER 2: No positive Sharpe ratios, using equal weight")
+                equal_weight = 1.0 / len(strategy_targets)
+                for strategy_name in strategy_targets.keys():
+                    new_allocations[strategy_name] = equal_weight
+            
+            return new_allocations
+            
+        except Exception as e:
+            self.algorithm.Error(f"LAYER 2: Sharpe allocation error: {str(e)}")
+            return self.strategy_allocations.copy()
+    
+    def _get_conservative_allocations(self, strategy_targets):
+        """Get conservative allocations when insufficient data."""
+        try:
             current_allocations = self.strategy_allocations.copy()
             
-            # For strategies with no current allocation but have targets, give small allocation
+            # Ensure all active strategies have some allocation
             for strategy_name in strategy_targets.keys():
-                if strategy_name not in current_allocations or current_allocations[strategy_name] == 0:
-                    current_allocations[strategy_name] = 0.1  # 10% initial allocation
+                if strategy_name not in current_allocations or current_allocations[strategy_name] < 0.05:
+                    current_allocations[strategy_name] = 0.10  # 10% minimum
             
-            # Normalize to ensure sum equals 1.0
+            # Normalize
             total = sum(current_allocations.values())
             if total > 0:
                 for strategy_name in current_allocations:
@@ -256,8 +352,34 @@ class LayerTwoAllocator:
             return current_allocations
             
         except Exception as e:
-            self.algorithm.Error(f"LAYER 2: Performance allocation calculation error: {str(e)}")
             return self.strategy_allocations.copy()
+    
+    def _log_performance_update(self, sharpe_ratios, new_allocations):
+        """Log performance metrics concisely to manage log size."""
+        try:
+            # Only log if there are meaningful changes or monthly
+            log_detailed = (self.algorithm.Time.day == 1 or  # Monthly detailed log
+                          any(abs(new_allocations.get(s, 0) - self.strategy_allocations.get(s, 0)) > 0.05 
+                              for s in new_allocations.keys()))  # >5% allocation change
+            
+            if log_detailed:
+                # Concise performance summary
+                perf_summary = []
+                for strategy, sharpe in sharpe_ratios.items():
+                    old_alloc = self.strategy_allocations.get(strategy, 0)
+                    new_alloc = new_allocations.get(strategy, 0)
+                    change = new_alloc - old_alloc
+                    
+                    track_record = len(self.strategy_returns[strategy])
+                    perf_summary.append(f"{strategy}: S={sharpe:.2f}, "
+                                      f"{old_alloc:.1%}→{new_alloc:.1%}({change:+.1%}), "
+                                      f"T={track_record}d")
+                
+                self.algorithm.Log(f"LAYER 2: Performance update: {'; '.join(perf_summary)}")
+            
+        except Exception as e:
+            # Silent handling to avoid log pollution
+            pass
     
     def _apply_smoothing_and_bounds(self, new_allocations):
         """Apply smoothing and bounds to new allocations."""
@@ -440,3 +562,37 @@ class LayerTwoAllocator:
         except Exception as e:
             self.algorithm.Error(f"LAYER 2: Config compliance report error: {str(e)}")
             return {'error': str(e)}
+
+    def update_strategy_performance(self, strategy_name, current_positions):
+        """
+        Update strategy performance tracking based on current positions.
+        Called daily to track strategy returns for Sharpe ratio calculations.
+        """
+        try:
+            if strategy_name not in self.strategies:
+                return
+            
+            # Calculate current strategy portfolio value based on positions
+            current_value = 0.0
+            for symbol, weight in current_positions.items():
+                if hasattr(self.algorithm.Securities[symbol], 'Price'):
+                    price = self.algorithm.Securities[symbol].Price
+                    # Estimate position value (simplified)
+                    position_value = weight * self.algorithm.Portfolio.TotalPortfolioValue
+                    current_value += position_value
+            
+            # Store current portfolio value
+            self.portfolio_values[strategy_name].append(current_value)
+            
+            # Calculate daily return if we have previous value
+            if strategy_name in self.last_portfolio_values and self.last_portfolio_values[strategy_name] > 0:
+                prev_value = self.last_portfolio_values[strategy_name]
+                daily_return = (current_value - prev_value) / prev_value
+                self.strategy_returns[strategy_name].append(daily_return)
+            
+            # Update last known value
+            self.last_portfolio_values[strategy_name] = current_value
+            
+        except Exception as e:
+            # Silent error handling to avoid log spam
+            pass

@@ -25,8 +25,8 @@ This is the ONLY component that calls SetCash(), SetStartDate(), SetWarmup(), et
 from AlgorithmImports import *
 from datetime import datetime, timedelta
 
-# SIMPLIFIED IMPORT - Only import what we actually need
-from config import get_full_config
+# SIMPLIFIED IMPORT - Only import what we actually need (FIXED: Use absolute import for QuantConnect)
+from src.components.config import get_full_config
 
 class AlgorithmConfigManager:
     """
@@ -454,6 +454,10 @@ class AlgorithmConfigManager:
         """Get the current configuration."""
         return self.config
     
+    def get_full_config(self):
+        """Get the complete configuration (alias for get_config for compatibility)."""
+        return self.config
+    
     def get_enabled_strategies(self):
         """Get the dictionary of enabled strategies."""
         return self.enabled_strategies
@@ -473,6 +477,47 @@ class AlgorithmConfigManager:
     def get_risk_config(self):
         """Get the risk management configuration."""
         return self.config['portfolio_risk']
+    
+    def get_universe_config(self):
+        """Get universe configuration for futures manager"""
+        universe_config = self.config.get('universe', {})
+        futures_config = universe_config.get('futures', {})
+        expansion_config = universe_config.get('expansion_candidates', {})
+        
+        # Transform the nested configuration into priority-based structure
+        priority_groups = {}
+        
+        # Process main futures configuration
+        for category, symbols in futures_config.items():
+            for ticker, symbol_config in symbols.items():
+                priority = symbol_config.get('priority', 1)
+                if priority not in priority_groups:
+                    priority_groups[priority] = []
+                
+                # Create symbol config with ticker
+                symbol_entry = {
+                    'ticker': ticker,
+                    'name': symbol_config.get('name', ticker),
+                    'category': symbol_config.get('category', 'futures'),
+                    'market': 'CME'  # Default market
+                }
+                priority_groups[priority].append(symbol_entry)
+        
+        # Process expansion candidates
+        for ticker, symbol_config in expansion_config.items():
+            priority = symbol_config.get('priority', 2)
+            if priority not in priority_groups:
+                priority_groups[priority] = []
+            
+            symbol_entry = {
+                'ticker': ticker,
+                'name': symbol_config.get('name', ticker),
+                'category': symbol_config.get('category', 'futures'),
+                'market': 'CME'  # Default market
+            }
+            priority_groups[priority].append(symbol_entry)
+        
+        return priority_groups
     
     def is_strategy_enabled(self, strategy_name):
         """Check if a strategy is enabled."""

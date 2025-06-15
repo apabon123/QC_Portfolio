@@ -130,6 +130,104 @@ class SystemReporter:
         except Exception as e:
             self.algorithm.Log(f"SystemReporter ERROR tracking trade: {str(e)}")
     
+    def track_rollover_cost(self, old_symbol, new_symbol, quantity) -> None:
+        """Track rollover transaction costs and performance impact."""
+        try:
+            # Get rollover configuration for cost tracking
+            rollover_config = self.config.get('execution', {}).get('rollover_config', {})
+            
+            if not rollover_config.get('track_rollover_costs', True):
+                return
+            
+            # Calculate estimated rollover costs
+            rollover_cost_data = {
+                'timestamp': self.algorithm.Time,
+                'old_symbol': str(old_symbol),
+                'new_symbol': str(new_symbol),
+                'quantity': quantity,
+                'rollover_type': 'futures_rollover',
+                'estimated_cost': self._estimate_rollover_cost(old_symbol, new_symbol, quantity),
+                'slippage_impact': self._estimate_rollover_slippage(old_symbol, new_symbol, quantity)
+            }
+            
+            # Add to trade history with rollover tag
+            rollover_trade = {
+                'timestamp': self.algorithm.Time,
+                'symbol': f"{old_symbol}->{new_symbol}",
+                'quantity': quantity,
+                'trade_value': abs(quantity) * self._get_symbol_price(new_symbol),
+                'strategy_source': 'rollover_system',
+                'transaction_cost': rollover_cost_data['estimated_cost'],
+                'slippage': rollover_cost_data['slippage_impact'],
+                'trade_type': 'rollover'
+            }
+            
+            self.trade_history.append(rollover_trade)
+            
+            # Update rollover-specific attribution
+            if 'rollover' not in self.strategy_performance:
+                self.strategy_performance['rollover'] = []
+            
+            self.strategy_performance['rollover'].append({
+                'timestamp': rollover_cost_data['timestamp'],
+                'trade_value': rollover_trade['trade_value'],
+                'transaction_cost': rollover_cost_data['estimated_cost'],
+                'rollover_pair': f"{old_symbol}->{new_symbol}"
+            })
+            
+            # Log rollover cost if detailed logging is enabled
+            monitoring_config = self.config.get('monitoring', {})
+            if monitoring_config.get('rollover_logging') == 'detailed':
+                self.algorithm.Log(f"ROLLOVER COST TRACKED: {old_symbol}->{new_symbol}, "
+                                 f"qty: {quantity}, est_cost: ${rollover_cost_data['estimated_cost']:.2f}")
+            
+        except Exception as e:
+            self.algorithm.Log(f"SystemReporter ERROR tracking rollover cost: {str(e)}")
+    
+    def _estimate_rollover_cost(self, old_symbol, new_symbol, quantity) -> float:
+        """Estimate the transaction cost of a rollover operation."""
+        try:
+            # Get cost configuration
+            cost_config = self.config.get('execution', {}).get('transaction_costs', {})
+            base_commission = cost_config.get('futures_commission_per_contract', 2.0)
+            rollover_multiplier = cost_config.get('rollover_commission_multiplier', 2.0)
+            
+            # Rollover involves closing old + opening new = 2x commission
+            estimated_cost = abs(quantity) * base_commission * rollover_multiplier
+            
+            return estimated_cost
+            
+        except Exception as e:
+            self.algorithm.Log(f"Error estimating rollover cost: {str(e)}")
+            return abs(quantity) * 4.0  # Fallback: $4 per contract
+    
+    def _estimate_rollover_slippage(self, old_symbol, new_symbol, quantity) -> float:
+        """Estimate slippage impact of rollover operation."""
+        try:
+            # Get slippage configuration
+            cost_config = self.config.get('execution', {}).get('transaction_costs', {})
+            rollover_slippage_bps = cost_config.get('rollover_slippage_bps', 2.0)
+            
+            # Calculate slippage as basis points of trade value
+            new_price = self._get_symbol_price(new_symbol)
+            trade_value = abs(quantity) * new_price
+            slippage_impact = trade_value * (rollover_slippage_bps / 10000.0)
+            
+            return slippage_impact
+            
+        except Exception as e:
+            self.algorithm.Log(f"Error estimating rollover slippage: {str(e)}")
+            return 0.0
+    
+    def _get_symbol_price(self, symbol) -> float:
+        """Get current price for a symbol."""
+        try:
+            if symbol in self.algorithm.Securities:
+                return float(self.algorithm.Securities[symbol].Price)
+            return 100.0  # Fallback price
+        except:
+            return 100.0  # Fallback price
+    
     def generate_daily_performance_update(self) -> Dict[str, Any]:
         """Generate daily performance metrics and risk monitoring."""
         try:

@@ -140,16 +140,61 @@ class MultiStrategyFuturesAlgorithm(QCAlgorithm):
 
     def _handle_basic_symbol_changes(self, symbol_changed_events):
         """
-        Basic symbol change handling - main.py will implement full rollover logic
+        Handle symbol changes using QC's built-in rollover management.
+        This is much cleaner than manual symbol matching.
         """
         if not symbol_changed_events:
             return
-            
-        # Just log the events for the base class (FIX: Handle KeyValuePair correctly)
+        
+        self.Log(f"=== FUTURES ROLLOVER EVENTS ===")
+        
         for event in symbol_changed_events:
             # Access the KeyValuePair correctly - get the Value which is the SymbolChangedEvent
             event_obj = event.Value
-            self.Log(f"SYMBOL CHANGE: {event_obj.OldSymbol} → {event_obj.NewSymbol}")
+            old_symbol = event_obj.OldSymbol
+            new_symbol = event_obj.NewSymbol
+            
+            self.Log(f"ROLLOVER: {old_symbol} → {new_symbol}")
+            
+            # Get current position in the old contract
+            old_holding = self.Portfolio[old_symbol]
+            if old_holding.Invested:
+                quantity = old_holding.Quantity
+                
+                # QC's recommended rollover approach: liquidate old, buy new
+                self.Log(f"  Rolling {quantity:+.0f} contracts from {old_symbol} to {new_symbol}")
+                
+                # Liquidate the old contract
+                self.Liquidate(old_symbol, tag=f"Rollover_Liquidate_{self.Time.strftime('%Y%m%d')}")
+                
+                # Immediately establish position in new contract
+                if quantity != 0:
+                    self.MarketOrder(new_symbol, quantity, tag=f"Rollover_Establish_{self.Time.strftime('%Y%m%d')}")
+                
+                self.Log(f"  ✓ Rollover completed: {old_symbol} → {new_symbol}")
+            else:
+                self.Log(f"  No position to roll for {old_symbol}")
+
+    def OnSymbolChangedEvents(self, symbol_changed_events):
+        """
+        QC's built-in rollover event handler.
+        This is called automatically when continuous contracts roll over.
+        """
+        try:
+            self._handle_basic_symbol_changes(symbol_changed_events)
+            
+            # If we have additional managers that need to know about rollovers, notify them
+            if hasattr(self, 'execution_manager') and self.execution_manager:
+                # The execution manager can track these events for reporting
+                for event in symbol_changed_events:
+                    event_obj = event.Value
+                    self.execution_manager.track_rollover_event(event_obj.OldSymbol, event_obj.NewSymbol)
+                    
+        except Exception as e:
+            self.Log(f"ERROR in OnSymbolChangedEvents: {str(e)}")
+            # Don't let rollover errors crash the algorithm
+            import traceback
+            self.Log(f"Rollover error traceback: {traceback.format_exc()}")
 
     def BasicWeeklyCheck(self):
         """
@@ -230,8 +275,47 @@ class MultiStrategyFuturesAlgorithm(QCAlgorithm):
             self.Log(f"ERROR adding futures contract {symbol}: {str(e)}")
             return None
 
-    def get_portfolio_summary(self):
-        """Get basic portfolio summary"""
+    def get_portfolio_summary(self, use_qc_native=True):
+        """
+        Get portfolio summary using QC's built-in features when available
+        
+        Args:
+            use_qc_native (bool): Whether to use QC's native portfolio features
+        """
+        if use_qc_native:
+            return self._get_qc_portfolio_summary()
+        else:
+            return self._get_custom_portfolio_summary()
+    
+    def _get_qc_portfolio_summary(self):
+        """Get portfolio summary using QC's built-in Portfolio object"""
+        # QC provides all these values efficiently
+        portfolio = self.Portfolio
+        
+        # Get position count using QC's optimized method
+        invested_holdings = [h for h in portfolio.Values if h.Invested]
+        total_holdings_value = sum(abs(float(h.HoldingsValue)) for h in invested_holdings)
+        
+        portfolio_value = float(portfolio.TotalPortfolioValue)
+        gross_exposure = total_holdings_value / portfolio_value if portfolio_value > 0 else 0
+        
+        return {
+            'portfolio_value': portfolio_value,
+            'cash': float(portfolio.Cash),
+            'margin_used': float(portfolio.TotalMarginUsed),
+            'total_holdings_value': float(portfolio.TotalHoldingsValue),
+            'total_fees': float(portfolio.TotalFees),
+            'total_profit': float(portfolio.TotalUnrealizedProfit),
+            'position_count': len(invested_holdings),
+            'gross_exposure': gross_exposure,
+            'net_liquidation_value': portfolio_value,  # Same as portfolio value but more explicit
+            'buying_power': float(portfolio.TotalMarginUsed),  # Available buying power
+            'invested': portfolio.Invested,
+            'timestamp': self.Time
+        }
+    
+    def _get_custom_portfolio_summary(self):
+        """Fallback to manual calculation (legacy)"""
         portfolio_value = float(self.Portfolio.TotalPortfolioValue)
         cash = float(self.Portfolio.Cash)
         margin_used = float(self.Portfolio.TotalMarginUsed)
@@ -249,8 +333,52 @@ class MultiStrategyFuturesAlgorithm(QCAlgorithm):
             'timestamp': self.Time
         }
 
-    def get_position_summary(self):
-        """Get detailed position summary"""
+    def get_position_summary(self, use_qc_native=True):
+        """
+        Get detailed position summary using QC's built-in features when available
+        
+        Args:
+            use_qc_native (bool): Whether to use QC's native position features
+        """
+        if use_qc_native:
+            return self._get_qc_position_summary()
+        else:
+            return self._get_custom_position_summary()
+    
+    def _get_qc_position_summary(self):
+        """Get position summary using QC's Portfolio.Values efficiently"""
+        positions = []
+        
+        # Use QC's optimized iteration over invested holdings
+        for holding in self.Portfolio.Values:
+            if holding.Invested:
+                # QC provides all these properties efficiently
+                positions.append({
+                    'symbol': str(holding.Symbol),
+                    'symbol_id': holding.Symbol.ID,  # QC's unique identifier
+                    'quantity': float(holding.Quantity),
+                    'holdings_value': float(holding.HoldingsValue),
+                    'unrealized_pnl': float(holding.UnrealizedProfit),
+                    'realized_pnl': float(holding.Profit),
+                    'average_price': float(holding.AveragePrice),
+                    'market_price': float(holding.Price),
+                    'total_sale_volume': float(holding.TotalSaleVolume),
+                    'net_profit': float(holding.NetProfit),
+                    'is_long': holding.IsLong,
+                    'is_short': holding.IsShort,
+                    'currency': str(holding.QuoteCurrency.Symbol) if hasattr(holding, 'QuoteCurrency') else 'USD'
+                })
+        
+        return {
+            'positions': positions,
+            'total_positions': len(positions),
+            'total_holdings_value': float(self.Portfolio.TotalHoldingsValue),
+            'total_unrealized_profit': float(self.Portfolio.TotalUnrealizedProfit),
+            'timestamp': self.Time
+        }
+    
+    def _get_custom_position_summary(self):
+        """Fallback to manual position calculation (legacy)"""
         positions = []
         for holding in self.Portfolio.Values:
             if holding.Invested:
@@ -268,6 +396,39 @@ class MultiStrategyFuturesAlgorithm(QCAlgorithm):
             'total_positions': len(positions),
             'timestamp': self.Time
         }
+    
+    def get_portfolio_metrics(self):
+        """Get comprehensive portfolio metrics using QC's built-in features"""
+        portfolio = self.Portfolio
+        
+        # Core portfolio metrics from QC
+        metrics = {
+            'portfolio_value': float(portfolio.TotalPortfolioValue),
+            'cash': float(portfolio.Cash),
+            'holdings_value': float(portfolio.TotalHoldingsValue),
+            'margin_used': float(portfolio.TotalMarginUsed),
+            'margin_remaining': float(portfolio.MarginRemaining),
+            'total_fees': float(portfolio.TotalFees),
+            'unrealized_profit': float(portfolio.TotalUnrealizedProfit),
+            'invested': portfolio.Invested,
+            'positions_count': sum(1 for h in portfolio.Values if h.Invested)
+        }
+        
+        # Calculate derived metrics
+        if metrics['portfolio_value'] > 0:
+            metrics['cash_percentage'] = metrics['cash'] / metrics['portfolio_value']
+            metrics['margin_utilization'] = metrics['margin_used'] / metrics['portfolio_value']
+            
+            # Calculate gross and net exposure
+            long_value = sum(h.HoldingsValue for h in portfolio.Values if h.IsLong)
+            short_value = sum(abs(h.HoldingsValue) for h in portfolio.Values if h.IsShort)
+            
+            metrics['long_exposure'] = long_value / metrics['portfolio_value']
+            metrics['short_exposure'] = short_value / metrics['portfolio_value']
+            metrics['gross_exposure'] = (long_value + short_value) / metrics['portfolio_value']
+            metrics['net_exposure'] = (long_value - short_value) / metrics['portfolio_value']
+        
+        return metrics
 
     def emergency_liquidate_all(self, reason="manual_trigger"):
         """Emergency liquidation of all positions"""

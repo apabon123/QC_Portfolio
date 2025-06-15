@@ -15,6 +15,8 @@ class PortfolioRiskManager:
     - Minimum notional exposure
     - Portfolio-level stops
     - Overall leverage management
+    
+    UPDATED: Now uses QC's built-in performance tracking when configured
     """
     
     def __init__(self, algorithm, config=None):
@@ -28,54 +30,139 @@ class PortfolioRiskManager:
             'daily_stop_loss': 0.20,             # 2% daily portfolio stop
             'max_drawdown_stop': 0.75,           # 15% max drawdown stop
             'vol_estimation_days': 63,           # 3 months for vol estimation
+            
+            # NEW: QC Integration Settings
+            'use_qc_performance': True,          # Use QC's built-in performance tracking
+            'use_qc_portfolio': True,            # Use QC's Portfolio object
+            'log_performance': True,             # Log performance metrics
         }
         
         if config:
             self.config.update(config)
         
-        # Risk tracking
+        # Legacy tracking (kept as fallback or when QC features disabled)
         self.portfolio_returns = deque(maxlen=self.config['vol_estimation_days'])
         self.portfolio_peak = 0.0
         self.stop_triggered = False
         self.last_portfolio_value = 0.0
         
-        self.algorithm.Log(f"Layer3 RiskManager: Initialized with config: {self.config}")
+        # QC Performance tracking
+        self.use_qc_features = self.config.get('use_qc_performance', True)
+        self.initial_portfolio_value = None
+        
+        self.algorithm.Log(f"Layer3 RiskManager: Initialized with QC features {'ENABLED' if self.use_qc_features else 'DISABLED'}")
+        self.algorithm.Log(f"Layer3 RiskManager: Config: {self.config}")
     
-    def update_portfolio_performance(self, current_portfolio_value):
+    def update_portfolio_performance(self, current_portfolio_value=None):
         """
-        Update portfolio performance tracking
+        Update portfolio performance tracking using QC's built-in features when available
         
         Args:
-            current_portfolio_value (float): Current portfolio value
+            current_portfolio_value (float): Optional override, otherwise uses QC's Portfolio.TotalPortfolioValue
         """
+        # Use QC's portfolio value if not provided
+        if current_portfolio_value is None:
+            current_portfolio_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
+        
+        # Initialize tracking on first call
+        if self.initial_portfolio_value is None:
+            self.initial_portfolio_value = current_portfolio_value
+            self.portfolio_peak = current_portfolio_value
+            self.last_portfolio_value = current_portfolio_value
+            return
+        
+        # Update performance tracking
+        if self.use_qc_features:
+            # Use QC's built-in statistics when available
+            self._update_qc_performance_tracking(current_portfolio_value)
+        else:
+            # Fall back to our custom tracking
+            self._update_custom_performance_tracking(current_portfolio_value)
+        
+        # Always update peak for drawdown calculation
+        if current_portfolio_value > self.portfolio_peak:
+            self.portfolio_peak = current_portfolio_value
+        
+        # Log performance if configured
+        if self.config.get('log_performance', False):
+            self._log_performance_summary(current_portfolio_value)
+    
+    def _update_qc_performance_tracking(self, current_portfolio_value):
+        """Update performance using QC's built-in features"""
+        # Calculate return for our vol estimation (QC doesn't expose this directly)
         if self.last_portfolio_value > 0:
             portfolio_return = (current_portfolio_value - self.last_portfolio_value) / self.last_portfolio_value
             self.portfolio_returns.append(portfolio_return)
         
-        # Update peak for drawdown calculation
-        if current_portfolio_value > self.portfolio_peak:
-            self.portfolio_peak = current_portfolio_value
+        self.last_portfolio_value = current_portfolio_value
+        
+        # Note: QC automatically tracks performance statistics in self.algorithm.Portfolio
+        # We can access: TotalPortfolioValue, TotalHoldingsValue, Cash, etc.
+    
+    def _update_custom_performance_tracking(self, current_portfolio_value):
+        """Fallback to custom performance tracking"""
+        if self.last_portfolio_value > 0:
+            portfolio_return = (current_portfolio_value - self.last_portfolio_value) / self.last_portfolio_value
+            self.portfolio_returns.append(portfolio_return)
         
         self.last_portfolio_value = current_portfolio_value
+    
+    def _log_performance_summary(self, current_portfolio_value):
+        """Log performance summary using QC or custom data"""
+        if self.initial_portfolio_value and self.initial_portfolio_value > 0:
+            total_return = (current_portfolio_value - self.initial_portfolio_value) / self.initial_portfolio_value
+            drawdown = (self.portfolio_peak - current_portfolio_value) / self.portfolio_peak if self.portfolio_peak > 0 else 0
+            
+            if self.use_qc_features:
+                # Access QC's portfolio statistics
+                cash = float(self.algorithm.Portfolio.Cash)
+                margin_used = float(self.algorithm.Portfolio.TotalMarginUsed)
+                holdings_value = float(self.algorithm.Portfolio.TotalHoldingsValue)
+                
+                if len(self.portfolio_returns) >= 10:  # Need some data for vol calc
+                    realized_vol = self.calculate_portfolio_volatility(None)
+                    self.algorithm.Log(f"Layer3 Performance: Total Return: {total_return:.2%}, "
+                                     f"Drawdown: {drawdown:.2%}, Vol: {realized_vol:.1%}, "
+                                     f"Cash: ${cash:,.0f}, Margin: ${margin_used:,.0f}")
+            else:
+                # Use custom tracking
+                self.algorithm.Log(f"Layer3 Performance: Total Return: {total_return:.2%}, "
+                                 f"Drawdown: {drawdown:.2%}")
     
     def calculate_portfolio_volatility(self, combined_targets):
         """
         Calculate expected portfolio volatility
         
         Args:
-            combined_targets (dict): {symbol: weight} from Layer 2
+            combined_targets (dict): {symbol: weight} from Layer 2 (can be None)
             
         Returns:
             float: Expected portfolio volatility
         """
-        if not combined_targets or len(self.portfolio_returns) < 20:
+        if len(self.portfolio_returns) < 20:
             return 0.15  # Default assumption
         
-        # Simple approach: use realized portfolio volatility
+        # Use realized portfolio volatility
         returns_array = np.array(list(self.portfolio_returns))
         portfolio_vol = np.std(returns_array, ddof=1) * np.sqrt(252)
         
         return max(portfolio_vol, 0.05)  # Minimum 5% vol assumption
+    
+    def get_qc_portfolio_summary(self):
+        """Get portfolio summary using QC's built-in features"""
+        if not self.use_qc_features:
+            return None
+        
+        return {
+            'total_portfolio_value': float(self.algorithm.Portfolio.TotalPortfolioValue),
+            'cash': float(self.algorithm.Portfolio.Cash),
+            'total_holdings_value': float(self.algorithm.Portfolio.TotalHoldingsValue),
+            'total_margin_used': float(self.algorithm.Portfolio.TotalMarginUsed),
+            'total_fees': float(self.algorithm.Portfolio.TotalFees),
+            'total_profit': float(self.algorithm.Portfolio.TotalUnrealizedProfit),
+            'invested': self.algorithm.Portfolio.Invested,
+            'positions_count': len([h for h in self.algorithm.Portfolio.Values if h.Invested])
+        }
     
     def apply_portfolio_risk_management(self, combined_targets):
         """
