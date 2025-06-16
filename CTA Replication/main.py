@@ -253,10 +253,18 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
         """Schedule weekly and monthly rebalancing."""
         try:
             # Weekly rebalancing on Fridays at 10 AM (market hours)
+            # Use WeekEnd() which triggers on the last trading day of the week (usually Friday)
             self.Schedule.On(
                 self.DateRules.WeekEnd(), 
                 self.TimeRules.At(10, 0), 
                 self.WeeklyRebalance
+            )
+            
+            # Alternative: Also schedule on explicit Fridays as backup
+            self.Schedule.On(
+                self.DateRules.Every(DayOfWeek.Friday),
+                self.TimeRules.At(10, 0),
+                self.WeeklyRebalanceBackup
             )
             
             # Monthly performance reporting
@@ -273,7 +281,10 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self.ValidateContinuousContracts
             )
             
-            self.Log("Rebalancing schedule configured: Weekly (10 AM) + Monthly")
+            self.Log("Rebalancing schedule configured:")
+            self.Log("  - Weekly: Fridays at 10:00 AM (WeekEnd + explicit Friday backup)")
+            self.Log("  - Monthly: Month end at 17:00")
+            self.Log("  - Daily: Contract validation at 09:00")
             
         except Exception as e:
             self.Error(f"Failed to schedule rebalancing: {str(e)}")
@@ -538,6 +549,16 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             if not self._warmup_completed:
                 self._warmup_completed = True
                 self.Log("Warmup completed - System ready for trading")
+                
+                # IMMEDIATE TEST: Trigger first rebalancing to test the system
+                self.Log("="*50)
+                self.Log("WARMUP COMPLETE - TESTING IMMEDIATE REBALANCING")
+                self.Log("="*50)
+                try:
+                    self.WeeklyRebalance()
+                except Exception as test_e:
+                    self.Error(f"IMMEDIATE REBALANCE TEST FAILED: {str(test_e)}")
+                self.Log("="*50)
                 
             # TARGETED APPROACH: Basic validation + position management for bad data
             validated_slice = self._validate_slice_data_basic(slice)
@@ -895,7 +916,9 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self._algorithm_start_time = self.Time
                 self.Log("WARNING: Tracking variables initialized in WeeklyRebalance (should have been in Initialize)")
             
+            # CRITICAL: Check if we're still warming up
             if self.IsWarmingUp:
+                self.Log(f"REBALANCE SKIPPED: Still warming up (current: {self.Time}, warmup: {self.IsWarmingUp})")
                 return
                 
             self.Log("="*50)
@@ -921,6 +944,22 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             
         except Exception as e:
             self.Error(f"Error in weekly rebalance: {str(e)}")
+    
+    def WeeklyRebalanceBackup(self):
+        """Backup weekly rebalancing method to ensure it triggers."""
+        try:
+            self.Log(f"BACKUP REBALANCE TRIGGER: Friday at {self.Time}")
+            
+            # Only execute if primary rebalance hasn't run today
+            if not hasattr(self, '_last_rebalance_date') or self._last_rebalance_date != self.Time.date():
+                self.Log("BACKUP: Executing weekly rebalance (primary didn't trigger)")
+                self._last_rebalance_date = self.Time.date()
+                self.WeeklyRebalance()
+            else:
+                self.Log("BACKUP: Primary rebalance already executed today")
+                
+        except Exception as e:
+            self.Error(f"Error in backup weekly rebalance: {str(e)}")
     
     def MonthlyReporting(self):
         """Generate monthly performance reports."""
