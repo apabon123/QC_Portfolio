@@ -42,6 +42,56 @@ This audit identifies **DANGEROUS** configuration access patterns that could lea
 - ~~`target_volatility`: 0.15 (Kestner), 0.20 (HMM), 0.2 (MTUM)~~ ✅ **NOW CENTRALIZED**
 - ~~`max_position_weight`: 0.5 (Kestner), 0.6 (HMM), 0.5 (MTUM)~~ ✅ **NOW CENTRALIZED**
 
+### **Fix #4: Universe Priority Filtering (NEW)**
+**Issue**: VX (priority 3) was being loaded despite being lower priority, causing unnecessary data downloads
+**Root Cause**: Universe loading processed ALL priority groups without filtering
+**Solution**: Added configurable priority filtering to only load priority 1 and 2 symbols by default
+```python
+# Configuration in config_market_strategy.py
+UNIVERSE_CONFIG = {
+    'loading': {
+        'max_priority': 2,                      # Only load priority 1 and 2 symbols by default
+        'include_expansion_candidates': True,   # Include expansion candidates in loading
+        'priority_override': None,              # Set to specific priority to load only that priority
+    }
+}
+
+# Updated algorithm_config_manager.py
+def get_universe_config(self, max_priority=None):
+    # Get priority filtering settings from config
+    loading_config = universe_config.get('loading', {})
+    if max_priority is None:
+        max_priority = loading_config.get('max_priority', 2)
+    
+    # Apply priority filtering
+    symbol_priority = symbol_config.get('priority', 1)
+    if symbol_priority <= max_priority:
+        # Include symbol
+    else:
+        self.algorithm.Log(f"CONFIG: Skipping {ticker} (priority {symbol_priority} > {max_priority})")
+```
+
+### **Fix #5: Strategy Warmup Period Restoration (CORRECTED)**
+**Issue**: Strategy warmup periods were incorrectly reduced, breaking strategy parameter requirements
+**Root Cause**: Warmup periods were arbitrarily reduced without considering strategy calculation needs
+**Solution**: Restored correct warmup periods based on strategy mathematical requirements
+```python
+# KestnerCTA Strategy - Based on 52-week maximum lookback
+'warmup_days': 400,  # Strategy-specific warmup (based on max lookback of 52 weeks + buffer)
+
+# MTUM_CTA Strategy - Based on 3-year volatility estimation requirement  
+'warmup_days': 252 * 3,  # Strategy-specific warmup (3 years for volatility estimation)
+
+# HMM_CTA Strategy - Based on regime detection requirements
+'warmup_days': 252,  # Strategy-specific warmup (1 year for regime detection)
+```
+
+**Impact**: 
+- VX remains available for future use but won't be loaded by default
+- Strategies now have proper warmup periods for accurate signal generation
+- Universe loading is more efficient (only loads needed symbols)
+- Configuration is flexible (can override priority filtering when needed)
+
 ## **✅ REMEDIATION COMPLETED**
 
 ### **Phase 1: Remove All Fallback Logic** ✅ **COMPLETED**
@@ -244,6 +294,8 @@ future = self.algorithm.AddFuture(
     contractDepthOffset=futures_params.get('contract_depth_offset', 0)
 )
 ```
+
+
 
 ---
 
