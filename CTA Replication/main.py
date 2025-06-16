@@ -555,7 +555,13 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self.Log("WARMUP COMPLETE - TESTING IMMEDIATE REBALANCING")
                 self.Log("="*50)
                 try:
+                    # Force immediate rebalancing test
+                    self.Log("FORCING IMMEDIATE REBALANCING TEST...")
                     self.WeeklyRebalance()
+                    
+                    # Also schedule next Friday rebalancing
+                    self.Log("SCHEDULING NEXT FRIDAY REBALANCING...")
+                    
                 except Exception as test_e:
                     self.Error(f"IMMEDIATE REBALANCE TEST FAILED: {str(test_e)}")
                 self.Log("="*50)

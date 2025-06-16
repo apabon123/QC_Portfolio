@@ -1,4 +1,4 @@
-2011-12-29 00:00:00 Launching analysis for b48fa88cd64676e3a013197e3447c673 with LEAN Engine v2.5.0.0.17142
+2011-12-29 00:00:00 Launching analysis for 05e9f9d56a8a6d9880e7eaa60b430c13 with LEAN Engine v2.5.0.0.17142
 2011-12-29 00:00:00 Warning: SetBenchmark(SPY): no existing symbol found, benchmark security will be added with Equity type.
 2011-12-29 00:00:00 Accurate daily end-times now enabled by default. See more at https://qnt.co/3YHaWHL. To disable it and use legacy daily bars set self.settings.daily_precise_end_time = False.
 2011-12-29 00:00:00 Algorithm starting warm up...
@@ -433,7 +433,10 @@ END CONFIGURATION AUDIT REPORT
 2011-12-29 00:00:00 SystemReporter: Initialized with professional analytics capabilities
 2011-12-29 00:00:00 SUCCESS: System reporter initialized
 2011-12-29 00:00:00 Step 8: Scheduling rebalancing...
-2011-12-29 00:00:00 Rebalancing schedule configured: Weekly (10 AM) + Monthly
+2011-12-29 00:00:00 Rebalancing schedule configured:
+2011-12-29 00:00:00   - Weekly: Fridays at 10:00 AM (WeekEnd + explicit Friday backup)
+2011-12-29 00:00:00   - Monthly: Month end at 17:00
+2011-12-29 00:00:00   - Daily: Contract validation at 09:00
 2011-12-29 00:00:00 ================================================================================
 2011-12-29 00:00:00 THREE-LAYER CTA SYSTEM INITIALIZATION COMPLETE
 2011-12-29 00:00:00 ================================================================================
@@ -678,6 +681,10 @@ END CONFIGURATION AUDIT REPORT
 2011-12-30 09:47:00 === QC Native Status ===
 2011-12-30 09:47:00 QC Native: 36 futures, 30 with data, 27 tradable
 2011-12-30 09:47:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2011-12-30 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2011-12-30 10:00:00, warmup: True)
+2011-12-30 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2011-12-30 10:00:00
+2011-12-30 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2011-12-30 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2011-12-30 10:00:00, warmup: True)
 2011-12-31 00:00:00 DataCache: Fetching history for GC28H12 (periods=856, resolution=4)
 2011-12-31 00:00:00 QC Added: Underlying contract GC V5AAWWBSPTB1
 2011-12-31 00:00:00 KestnerCTA: Skipping rollover contract: GC V5AAWWBSPTB1
@@ -728,6 +735,10 @@ END CONFIGURATION AUDIT REPORT
 2012-01-06 09:47:00 === QC Native Status ===
 2012-01-06 09:47:00 QC Native: 37 futures, 31 with data, 28 tradable
 2012-01-06 09:47:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-01-06 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-01-06 10:00:00, warmup: True)
+2012-01-06 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-01-06 10:00:00
+2012-01-06 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-01-06 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-01-06 10:00:00, warmup: True)
 2012-01-08 16:27:00 Starting daily QC native contract validation...
 2012-01-08 16:27:00 === QC Native Status ===
 2012-01-08 16:27:00 QC Native: 37 futures, 33 with data, 28 tradable
@@ -758,6 +769,10 @@ END CONFIGURATION AUDIT REPORT
 2012-01-13 09:47:00 === QC Native Status ===
 2012-01-13 09:47:00 QC Native: 37 futures, 33 with data, 28 tradable
 2012-01-13 09:47:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-01-13 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-01-13 10:00:00, warmup: True)
+2012-01-13 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-01-13 10:00:00
+2012-01-13 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-01-13 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-01-13 10:00:00, warmup: True)
 2012-01-15 16:42:00 Starting daily QC native contract validation...
 2012-01-15 16:42:00 === QC Native Status ===
 2012-01-15 16:42:00 QC Native: 37 futures, 33 with data, 28 tradable
@@ -801,6 +816,10 @@ END CONFIGURATION AUDIT REPORT
 2012-01-20 09:42:00 === QC Native Status ===
 2012-01-20 09:42:00 QC Native: 36 futures, 33 with data, 27 tradable
 2012-01-20 09:42:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-01-20 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-01-20 10:00:00, warmup: True)
+2012-01-20 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-01-20 10:00:00
+2012-01-20 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-01-20 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-01-20 10:00:00, warmup: True)
 2012-01-21 00:00:00 QC Removed: CL V3FCIJGBIH8H
 2012-01-21 00:00:00 MTUM_CTA: Removed symbol data for CL V3FCIJGBIH8H
 2012-01-22 16:30:00 Starting daily QC native contract validation...
@@ -831,6 +850,10 @@ END CONFIGURATION AUDIT REPORT
 2012-01-27 09:48:00 === QC Native Status ===
 2012-01-27 09:48:00 QC Native: 35 futures, 33 with data, 26 tradable
 2012-01-27 09:48:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-01-27 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-01-27 10:00:00, warmup: True)
+2012-01-27 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-01-27 10:00:00
+2012-01-27 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-01-27 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-01-27 10:00:00, warmup: True)
 2012-01-28 00:00:00 QC Removed: GC V3M8N70I1SIL
 2012-01-28 00:00:00 MTUM_CTA: Removed symbol data for GC V3M8N70I1SIL
 2012-01-29 16:34:00 Starting daily QC native contract validation...
@@ -876,6 +899,10 @@ END CONFIGURATION AUDIT REPORT
 2012-02-03 10:00:00 === QC Native Status ===
 2012-02-03 10:00:00 QC Native: 34 futures, 32 with data, 25 tradable
 2012-02-03 10:00:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-02-03 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-02-03 10:00:00, warmup: True)
+2012-02-03 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-02-03 10:00:00
+2012-02-03 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-02-03 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-02-03 10:00:00, warmup: True)
 2012-02-05 16:41:00 Starting daily QC native contract validation...
 2012-02-05 16:41:00 === QC Native Status ===
 2012-02-05 16:41:00 QC Native: 34 futures, 32 with data, 25 tradable
@@ -904,6 +931,10 @@ END CONFIGURATION AUDIT REPORT
 2012-02-10 09:43:00 === QC Native Status ===
 2012-02-10 09:43:00 QC Native: 34 futures, 32 with data, 25 tradable
 2012-02-10 09:43:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-02-10 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-02-10 10:00:00, warmup: True)
+2012-02-10 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-02-10 10:00:00
+2012-02-10 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-02-10 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-02-10 10:00:00, warmup: True)
 2012-02-12 16:36:00 Starting daily QC native contract validation...
 2012-02-12 16:36:00 === QC Native Status ===
 2012-02-12 16:36:00 QC Native: 34 futures, 32 with data, 25 tradable
@@ -934,6 +965,10 @@ END CONFIGURATION AUDIT REPORT
 2012-02-17 10:00:00 === QC Native Status ===
 2012-02-17 10:00:00 QC Native: 34 futures, 32 with data, 25 tradable
 2012-02-17 10:00:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-02-17 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-02-17 10:00:00, warmup: True)
+2012-02-17 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-02-17 10:00:00
+2012-02-17 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-02-17 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-02-17 10:00:00, warmup: True)
 2012-02-19 16:37:00 Starting daily QC native contract validation...
 2012-02-19 16:37:00 === QC Native Status ===
 2012-02-19 16:37:00 QC Native: 34 futures, 32 with data, 25 tradable
@@ -971,6 +1006,10 @@ END CONFIGURATION AUDIT REPORT
 2012-02-24 09:44:00 === QC Native Status ===
 2012-02-24 09:44:00 QC Native: 34 futures, 32 with data, 25 tradable
 2012-02-24 09:44:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-02-24 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-02-24 10:00:00, warmup: True)
+2012-02-24 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-02-24 10:00:00
+2012-02-24 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-02-24 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-02-24 10:00:00, warmup: True)
 2012-02-26 16:42:00 Starting daily QC native contract validation...
 2012-02-26 16:42:00 === QC Native Status ===
 2012-02-26 16:42:00 QC Native: 34 futures, 32 with data, 25 tradable
@@ -1034,6 +1073,10 @@ END CONFIGURATION AUDIT REPORT
 2012-03-02 09:43:00 === QC Native Status ===
 2012-03-02 09:43:00 QC Native: 35 futures, 33 with data, 26 tradable
 2012-03-02 09:43:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-03-02 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-03-02 10:00:00, warmup: True)
+2012-03-02 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-03-02 10:00:00
+2012-03-02 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-03-02 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-03-02 10:00:00, warmup: True)
 2012-03-04 16:40:00 Starting daily QC native contract validation...
 2012-03-04 16:40:00 === QC Native Status ===
 2012-03-04 16:40:00 QC Native: 35 futures, 33 with data, 26 tradable
@@ -1062,6 +1105,10 @@ END CONFIGURATION AUDIT REPORT
 2012-03-09 09:45:00 === QC Native Status ===
 2012-03-09 09:45:00 QC Native: 35 futures, 33 with data, 26 tradable
 2012-03-09 09:45:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-03-09 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-03-09 10:00:00, warmup: True)
+2012-03-09 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-03-09 10:00:00
+2012-03-09 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-03-09 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-03-09 10:00:00, warmup: True)
 2012-03-11 16:40:00 Starting daily QC native contract validation...
 2012-03-11 16:40:00 === QC Native Status ===
 2012-03-11 16:40:00 QC Native: 35 futures, 33 with data, 26 tradable
@@ -1098,6 +1145,10 @@ END CONFIGURATION AUDIT REPORT
 2012-03-16 09:43:00 === QC Native Status ===
 2012-03-16 09:43:00 QC Native: 35 futures, 33 with data, 26 tradable
 2012-03-16 09:43:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-03-16 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-03-16 10:00:00, warmup: True)
+2012-03-16 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-03-16 10:00:00
+2012-03-16 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-03-16 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-03-16 10:00:00, warmup: True)
 2012-03-17 00:00:00 QC Removed: ES V4YHJRXRSRGH
 2012-03-17 00:00:00 QC Removed: NQ V4YHJRXRSRGH
 2012-03-17 00:00:00 QC Removed: YM V4YHJRXRSQAT
@@ -1124,7 +1175,7 @@ END CONFIGURATION AUDIT REPORT
 2012-03-20 01:00:00 DataCache: Fetching history for 6J17U12 (periods=856, resolution=4)
 2012-03-20 01:00:00 QC Added: Underlying contract 6E VA0N92LZYC5D
 2012-03-20 01:00:00 QC Added: Underlying contract 6J VA0N92LZYC5D
-2012-03-20 01:00:00 QC Removed: 6E V51FW21A10XT
+2012-03-20 01:00:00 QC Removed: 6J V51FW21A10XT
 2012-03-20 01:00:00 KestnerCTA: Skipping rollover contract: 6E VA0N92LZYC5D
 2012-03-20 01:00:00 KestnerCTA: Skipping rollover contract: 6J VA0N92LZYC5D
 2012-03-20 01:00:00 DataCache: Cached 261 bars for 6E17U12
@@ -1133,7 +1184,7 @@ END CONFIGURATION AUDIT REPORT
 2012-03-20 01:00:00 DataCache: Cached 261 bars for 6J17U12
 2012-03-20 01:00:00 MTUM SymbolData 6J VA0N92LZYC5D: Initialized with 261 bars
 2012-03-20 01:00:00 MTUM_CTA: Added symbol data for 6J VA0N92LZYC5D
-2012-03-20 01:00:00 MTUM_CTA: Removed symbol data for 6E V51FW21A10XT
+2012-03-20 01:00:00 MTUM_CTA: Removed symbol data for 6J V51FW21A10XT
 2012-03-20 01:00:00 HMM_CTA: Skipping rollover contract: 6E VA0N92LZYC5D
 2012-03-20 01:00:00 HMM_CTA: Skipping rollover contract: 6J VA0N92LZYC5D
 2012-03-20 09:45:00 Starting daily QC native contract validation...
@@ -1200,6 +1251,10 @@ END CONFIGURATION AUDIT REPORT
 2012-03-23 09:44:00 === QC Native Status ===
 2012-03-23 09:44:00 QC Native: 37 futures, 30 with data, 28 tradable
 2012-03-23 09:44:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-03-23 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-03-23 10:00:00, warmup: True)
+2012-03-23 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-03-23 10:00:00
+2012-03-23 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-03-23 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-03-23 10:00:00, warmup: True)
 2012-03-25 16:42:00 Starting daily QC native contract validation...
 2012-03-25 16:42:00 === QC Native Status ===
 2012-03-25 16:42:00 QC Native: 37 futures, 33 with data, 28 tradable
@@ -1230,6 +1285,10 @@ END CONFIGURATION AUDIT REPORT
 2012-03-30 09:46:00 === QC Native Status ===
 2012-03-30 09:46:00 QC Native: 36 futures, 32 with data, 27 tradable
 2012-03-30 09:46:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-03-30 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-03-30 10:00:00, warmup: True)
+2012-03-30 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-03-30 10:00:00
+2012-03-30 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-03-30 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-03-30 10:00:00, warmup: True)
 2012-04-01 16:39:00 Starting daily QC native contract validation...
 2012-04-01 16:39:00 === QC Native Status ===
 2012-04-01 16:39:00 QC Native: 36 futures, 32 with data, 27 tradable
@@ -1273,6 +1332,10 @@ END CONFIGURATION AUDIT REPORT
 2012-04-06 09:41:00 === QC Native Status ===
 2012-04-06 09:41:00 QC Native: 36 futures, 32 with data, 27 tradable
 2012-04-06 09:41:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-04-06 11:15:00 REBALANCE SKIPPED: Still warming up (current: 2012-04-06 10:00:00, warmup: True)
+2012-04-06 11:15:00 BACKUP REBALANCE TRIGGER: Friday at 2012-04-06 10:00:00
+2012-04-06 11:15:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-04-06 11:15:00 REBALANCE SKIPPED: Still warming up (current: 2012-04-06 10:00:00, warmup: True)
 2012-04-08 16:35:00 Starting daily QC native contract validation...
 2012-04-08 16:35:00 === QC Native Status ===
 2012-04-08 16:35:00 QC Native: 36 futures, 32 with data, 27 tradable
@@ -1303,6 +1366,10 @@ END CONFIGURATION AUDIT REPORT
 2012-04-13 09:42:00 === QC Native Status ===
 2012-04-13 09:42:00 QC Native: 36 futures, 32 with data, 27 tradable
 2012-04-13 09:42:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-04-13 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-04-13 10:00:00, warmup: True)
+2012-04-13 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-04-13 10:00:00
+2012-04-13 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-04-13 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-04-13 10:00:00, warmup: True)
 2012-04-15 16:37:00 Starting daily QC native contract validation...
 2012-04-15 16:37:00 === QC Native Status ===
 2012-04-15 16:37:00 QC Native: 36 futures, 32 with data, 27 tradable
@@ -1339,6 +1406,10 @@ END CONFIGURATION AUDIT REPORT
 2012-04-20 09:44:00 === QC Native Status ===
 2012-04-20 09:44:00 QC Native: 34 futures, 32 with data, 25 tradable
 2012-04-20 09:44:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-04-20 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-04-20 10:00:00, warmup: True)
+2012-04-20 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-04-20 10:00:00
+2012-04-20 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-04-20 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-04-20 10:00:00, warmup: True)
 2012-04-21 00:00:00 QC Removed: CL V5WY71QOH4U9
 2012-04-21 00:00:00 MTUM_CTA: Removed symbol data for CL V5WY71QOH4U9
 2012-04-22 16:27:00 Starting daily QC native contract validation...
@@ -1385,6 +1456,10 @@ END CONFIGURATION AUDIT REPORT
 2012-04-27 09:46:00 === QC Native Status ===
 2012-04-27 09:46:00 QC Native: 34 futures, 32 with data, 25 tradable
 2012-04-27 09:46:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-04-27 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-04-27 10:00:00, warmup: True)
+2012-04-27 10:00:00 BACKUP REBALANCE TRIGGER: Friday at 2012-04-27 10:00:00
+2012-04-27 10:00:00 BACKUP: Executing weekly rebalance (primary didn't trigger)
+2012-04-27 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-04-27 10:00:00, warmup: True)
 2012-04-29 16:34:00 Starting daily QC native contract validation...
 2012-04-29 16:34:00 === QC Native Status ===
 2012-04-29 16:34:00 QC Native: 34 futures, 32 with data, 25 tradable
@@ -1435,103 +1510,5 @@ END CONFIGURATION AUDIT REPORT
 2012-05-04 09:43:00 === QC Native Status ===
 2012-05-04 09:43:00 QC Native: 35 futures, 33 with data, 26 tradable
 2012-05-04 09:43:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-06 16:19:00 Starting daily QC native contract validation...
-2012-05-06 16:19:00 === QC Native Status ===
-2012-05-06 16:19:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-06 16:19:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-06 16:19:00 Starting daily QC native contract validation...
-2012-05-06 16:19:00 === QC Native Status ===
-2012-05-06 16:19:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-06 16:19:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-07 09:44:00 Starting daily QC native contract validation...
-2012-05-07 09:44:00 === QC Native Status ===
-2012-05-07 09:44:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-07 09:44:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-08 09:42:00 Starting daily QC native contract validation...
-2012-05-08 09:42:00 === QC Native Status ===
-2012-05-08 09:42:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-08 09:42:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-09 09:42:00 Starting daily QC native contract validation...
-2012-05-09 09:42:00 === QC Native Status ===
-2012-05-09 09:42:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-09 09:42:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-10 09:41:00 Starting daily QC native contract validation...
-2012-05-10 09:41:00 === QC Native Status ===
-2012-05-10 09:41:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-10 09:41:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-11 00:00:00 ROLLOVER SUCCESS: CL V6SGI1G2X9Z5 -> CL V7L0GR1Z55MP, quantity: 0.0
-2012-05-11 00:00:00 ROLLOVER COST TRACKED: CL V6SGI1G2X9Z5->CL V7L0GR1Z55MP, qty: 0.0, est_cost: $0.00
-2012-05-11 09:45:00 Starting daily QC native contract validation...
-2012-05-11 09:45:00 === QC Native Status ===
-2012-05-11 09:45:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-11 09:45:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-13 16:33:00 Starting daily QC native contract validation...
-2012-05-13 16:33:00 === QC Native Status ===
-2012-05-13 16:33:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-13 16:33:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-13 16:33:00 Starting daily QC native contract validation...
-2012-05-13 16:33:00 === QC Native Status ===
-2012-05-13 16:33:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-13 16:33:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-14 09:43:00 Starting daily QC native contract validation...
-2012-05-14 09:43:00 === QC Native Status ===
-2012-05-14 09:43:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-14 09:43:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-15 09:43:00 Starting daily QC native contract validation...
-2012-05-15 09:43:00 === QC Native Status ===
-2012-05-15 09:43:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-15 09:43:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-16 09:56:00 Starting daily QC native contract validation...
-2012-05-16 09:56:00 === QC Native Status ===
-2012-05-16 09:56:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-16 09:56:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-17 09:44:00 Starting daily QC native contract validation...
-2012-05-17 09:44:00 === QC Native Status ===
-2012-05-17 09:44:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-17 09:44:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-18 09:44:00 Starting daily QC native contract validation...
-2012-05-18 09:44:00 === QC Native Status ===
-2012-05-18 09:44:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-18 09:44:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-20 16:17:00 Starting daily QC native contract validation...
-2012-05-20 16:17:00 === QC Native Status ===
-2012-05-20 16:17:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-20 16:17:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-20 16:17:00 Starting daily QC native contract validation...
-2012-05-20 16:17:00 === QC Native Status ===
-2012-05-20 16:17:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-20 16:17:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-21 09:51:00 Starting daily QC native contract validation...
-2012-05-21 09:51:00 === QC Native Status ===
-2012-05-21 09:51:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-21 09:51:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-22 00:00:00 DataCache: Fetching history for CL19Z12 (periods=856, resolution=4)
-2012-05-22 00:00:00 QC Added: Underlying contract CL VBQOEYNMRU0X
-2012-05-22 00:00:00 KestnerCTA: Skipping rollover contract: CL VBQOEYNMRU0X
-2012-05-22 00:00:00 DataCache: Cached 856 bars for CL19Z12
-2012-05-22 00:00:00 MTUM SymbolData CL VBQOEYNMRU0X: Initialized with 856 bars
-2012-05-22 00:00:00 MTUM_CTA: Added symbol data for CL VBQOEYNMRU0X
-2012-05-22 00:00:00 HMM_CTA: Skipping rollover contract: CL VBQOEYNMRU0X
-2012-05-22 09:45:00 Starting daily QC native contract validation...
-2012-05-22 09:45:00 === QC Native Status ===
-2012-05-22 09:45:00 QC Native: 36 futures, 33 with data, 27 tradable
-2012-05-22 09:45:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-23 00:00:00 QC Removed: CL V6SGI1G2X9Z5
-2012-05-23 00:00:00 MTUM_CTA: Removed symbol data for CL V6SGI1G2X9Z5
-2012-05-23 09:44:00 Starting daily QC native contract validation...
-2012-05-23 09:44:00 === QC Native Status ===
-2012-05-23 09:44:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-23 09:44:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-24 09:45:00 Starting daily QC native contract validation...
-2012-05-24 09:45:00 === QC Native Status ===
-2012-05-24 09:45:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-24 09:45:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-25 10:00:00 Starting daily QC native contract validation...
-2012-05-25 10:00:00 === QC Native Status ===
-2012-05-25 10:00:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-25 10:00:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
-2012-05-27 16:21:00 Starting daily QC native contract validation...
-2012-05-27 16:21:00 === QC Native Status ===
-2012-05-27 16:21:00 QC Native: 35 futures, 33 with data, 26 tradable
-2012-05-27 16:21:00 QC Native Status: Failed history requests: 0, Initialized symbols: 0
+2012-05-04 10:00:00 REBALANCE SKIPPED: Still warming up (current: 2012-05-04 10:00:00, warmup: True)
 You currently have a maximum of 100kb of log data per backtest, and 100kb total max per day. Have you tried step-by-step debugging? See more at https://qnt.co/debugging or upgrade your organization type for more logs at https://www.quantconnect.com/pricing
