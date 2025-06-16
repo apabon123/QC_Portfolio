@@ -453,49 +453,56 @@ class FuturesManager:
     
     def _is_symbol_tradable_qc_native(self, symbol):
         """
-        LEVERAGE QC's built-in tradability checks
-        Use Securities properties instead of rebuilding validation
+        Check if symbol is tradable using QC's native validation with detailed debugging
         """
         try:
-            # Check if symbol exists in securities (QC managed)
             if symbol not in self.algorithm.Securities:
+                self.algorithm.Log(f"FuturesManager: {symbol} NOT in Securities collection")
                 return False
             
             security = self.algorithm.Securities[symbol]
             
-            # LEVERAGE QC'S BUILT-IN PROPERTIES:
+            # Detailed debugging for IsTradable issue
+            has_data = security.HasData
+            is_tradable = security.IsTradable
+            price = security.Price
             
-            # 1. IsTradable property (QC built-in)
-            if not security.IsTradable:
-                return False
+            # Additional debugging information
+            market_hours_info = ""
+            try:
+                if hasattr(security, 'Exchange') and hasattr(security.Exchange, 'Hours'):
+                    is_market_open = security.Exchange.Hours.IsOpen(self.algorithm.Time, False)
+                    market_hours_info = f", MarketOpen:{is_market_open}"
+                else:
+                    market_hours_info = ", MarketHours:Unknown"
+            except:
+                market_hours_info = ", MarketHours:Error"
             
-            # 2. HasData property (QC built-in)  
-            if not security.HasData:
-                return False
+            # Check if it's a continuous contract vs underlying
+            symbol_str = str(symbol)
+            contract_type = "Continuous" if symbol_str.startswith('/') else "Underlying"
             
-            # 3. Price validation (QC built-in Price property)
-            if not hasattr(security, 'Price') or security.Price is None or security.Price <= 0:
-                return False
-            
-            # 4. Use QC's SymbolProperties for contract validation
-            if hasattr(security, 'SymbolProperties'):
-                # QC provides lot size, minimum price variation, etc.
-                symbol_props = security.SymbolProperties
+            if is_tradable and has_data and price > 0:
+                self.algorithm.Log(f"FuturesManager: {symbol} IS liquid - {contract_type}, HasData:{has_data}, IsTradable:{is_tradable}, Price:{price}{market_hours_info}")
+                return True
+            else:
+                self.algorithm.Log(f"FuturesManager: {symbol} NOT liquid - {contract_type}, HasData:{has_data}, IsTradable:{is_tradable}, Price:{price}{market_hours_info}")
                 
-                # Validate lot size exists (QC built-in)
-                if hasattr(symbol_props, 'LotSize') and symbol_props.LotSize <= 0:
-                    return False
-            
-            # 5. Market hours validation (QC built-in via Exchange)
-            if hasattr(security, 'Exchange') and security.Exchange:
-                # QC handles market hours automatically
-                # We don't need to reimplement this
-                pass
-            
-            return True
-            
+                # Additional debugging for why it's not tradable
+                if not is_tradable:
+                    try:
+                        # Check if it's a settlement issue
+                        if hasattr(security, 'IsDelisted'):
+                            self.algorithm.Log(f"  DEBUG: {symbol} IsDelisted: {security.IsDelisted}")
+                        if hasattr(security, 'IsTradable'):
+                            self.algorithm.Log(f"  DEBUG: {symbol} IsTradable reason: Check market hours, settlement, or contract expiry")
+                    except Exception as debug_e:
+                        self.algorithm.Log(f"  DEBUG ERROR for {symbol}: {str(debug_e)}")
+                
+                return False
+                
         except Exception as e:
-            # If validation fails, assume not tradable
+            self.algorithm.Error(f"FuturesManager: Error checking tradability for {symbol}: {str(e)}")
             return False
     
     def validate_price(self, symbol, price):

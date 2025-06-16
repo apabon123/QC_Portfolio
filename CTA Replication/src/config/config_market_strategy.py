@@ -24,7 +24,7 @@ ALGORITHM_CONFIG = {
     'timezone': 'America/New_York',         # Eastern time
     'benchmark': 'SPY',                     # Benchmark for comparison
     'brokerage_model': 'InteractiveBrokers', # Brokerage model
-    'warmup_period_days': 80,               # Algorithm warmup period
+    'warmup_period_days': 756,              # Match longest strategy requirement (MTUM_CTA needs 3 years)
 }
 
 # =============================================================================

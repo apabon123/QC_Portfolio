@@ -252,10 +252,10 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
     def _schedule_rebalancing(self):
         """Schedule weekly and monthly rebalancing."""
         try:
-            # Weekly rebalancing on Fridays at 4 PM
+            # Weekly rebalancing on Fridays at 10 AM (market hours)
             self.Schedule.On(
                 self.DateRules.WeekEnd(), 
-                self.TimeRules.At(16, 0), 
+                self.TimeRules.At(10, 0), 
                 self.WeeklyRebalance
             )
             
@@ -273,7 +273,7 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self.ValidateContinuousContracts
             )
             
-            self.Log("Rebalancing schedule configured: Weekly + Monthly")
+            self.Log("Rebalancing schedule configured: Weekly (10 AM) + Monthly")
             
         except Exception as e:
             self.Error(f"Failed to schedule rebalancing: {str(e)}")
