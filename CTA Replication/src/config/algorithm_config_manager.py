@@ -26,7 +26,81 @@ from AlgorithmImports import *
 from datetime import datetime, timedelta
 
 # SIMPLIFIED IMPORT - Only import what we actually need (FIXED: Use absolute import for QuantConnect)
-from src.components.config import get_full_config
+try:
+    # Try different import paths for QuantConnect cloud compatibility
+    from config import get_full_config
+except ImportError:
+    try:
+        from .config import get_full_config
+    except ImportError:
+        # Final fallback - inline config
+        def get_full_config():
+            return {
+                'algorithm': {
+                    'start_date': {'year': 2015, 'month': 1, 'day': 1},
+                    'end_date': {'year': 2020, 'month': 1, 'day': 1},
+                    'initial_cash': 10000000,
+                    'warmup_period_days': 80
+                },
+                'strategies': {
+                    'KestnerCTA': {
+                        'enabled': True,
+                        'name': 'KestnerCTA',
+                        'module': 'strategies.kestner_cta_strategy',
+                        'class': 'KestnerCTAStrategy',
+                        'momentum_lookbacks': [16, 32, 52],
+                        'volatility_lookback_days': 63,
+                        'target_volatility': 0.2,
+                        'rebalance_frequency': 'weekly',
+                        'max_position_weight': 0.6
+                    }
+                },
+                'universe': {
+                    'futures': {
+                        'ES': {'name': 'E-mini S&P 500', 'priority': 1, 'category': 'equity_index'},
+                        'NQ': {'name': 'E-mini NASDAQ 100', 'priority': 1, 'category': 'equity_index'},
+                        'ZN': {'name': '10-Year Treasury Note', 'priority': 1, 'category': 'bond'}
+                    },
+                    'expansion_candidates': {}
+                },
+                'strategy_allocation': {
+                    'initial_allocations': {'KestnerCTA': 1.0},
+                    'allocation_bounds': {'KestnerCTA': {'min': 0.3, 'max': 1.0}}
+                },
+                'portfolio_risk': {
+                    'target_portfolio_vol': 0.6,
+                    'max_leverage_multiplier': 100,
+                    'max_gross_exposure': 10.0,
+                    'max_single_position': 10.0,
+                    'daily_stop_loss': 0.2
+                },
+                'execution': {
+                    'rollover_config': {
+                        'enabled': True,
+                        'order_type': 'market',
+                        'retry_attempts': 3,
+                        'log_rollover_events': True,
+                        'rollover_tag_prefix': 'ROLLOVER',
+                        'validate_rollover_contracts': True,
+                        'emergency_liquidation': True,
+                        'track_rollover_costs': True
+                    },
+                    'min_trade_value': 1000,
+                    'min_weight_change': 0.01,
+                    'max_single_order_value': 50000000
+                },
+                'constraints': {
+                    'min_capital': 5000000,
+                    'initial_capital': 10000000,
+                    'max_total_positions': 50
+                },
+                'system': {
+                    'name': 'Three-Layer CTA System',
+                    'version': '1.0.0',
+                    'description': 'QuantConnect Three-Layer CTA Portfolio System (Inline Fallback)',
+                    'last_updated': '2024-01-01'
+                }
+            }
 
 class AlgorithmConfigManager:
     """
@@ -428,23 +502,36 @@ class AlgorithmConfigManager:
     
     def _log_config_summary(self):
         """Log a summary of the loaded and applied configuration."""
-        system_info = self.config['system']
-        self.algorithm.Log("=" * 80)
-        self.algorithm.Log(f"CONFIG MANAGER: {system_info['name']} v{system_info['version']}")
-        self.algorithm.Log(f"Description: {system_info['description']}")
-        self.algorithm.Log(f"Configuration: Simplified Main Config")
-        self.algorithm.Log(f"Last Updated: {system_info['last_updated']}")
-        
-        # Log strategy mode
-        if self.single_strategy_mode:
-            strategy_name = list(self.enabled_strategies.keys())[0]
-            self.algorithm.Log(f"STRATEGY MODE: Single Strategy Testing ({strategy_name})")
-        else:
-            self.algorithm.Log(f"STRATEGY MODE: Multi-Strategy Operation ({len(self.enabled_strategies)} strategies)")
-        
-        self.algorithm.Log("SINGLE CONFIG AUTHORITY: All QuantConnect settings applied")
-        self.algorithm.Log("SIMPLIFIED IMPORTS: No complex config variants")
-        self.algorithm.Log("=" * 80)
+        try:
+            system_info = self.config.get('system', {})
+            self.algorithm.Log("=" * 80)
+            
+            # Use get() with defaults to handle missing keys gracefully
+            name = system_info.get('name', 'Three-Layer CTA System')
+            version = system_info.get('version', '1.0.0')
+            description = system_info.get('description', 'QuantConnect CTA Portfolio System')
+            last_updated = system_info.get('last_updated', 'N/A')
+            
+            self.algorithm.Log(f"CONFIG MANAGER: {name} v{version}")
+            self.algorithm.Log(f"Description: {description}")
+            self.algorithm.Log(f"Configuration: Simplified Main Config")
+            self.algorithm.Log(f"Last Updated: {last_updated}")
+            
+            # Log strategy mode
+            if self.single_strategy_mode:
+                strategy_name = list(self.enabled_strategies.keys())[0]
+                self.algorithm.Log(f"STRATEGY MODE: Single Strategy Testing ({strategy_name})")
+            else:
+                self.algorithm.Log(f"STRATEGY MODE: Multi-Strategy Operation ({len(self.enabled_strategies)} strategies)")
+            
+            self.algorithm.Log("SINGLE CONFIG AUTHORITY: All QuantConnect settings applied")
+            self.algorithm.Log("SIMPLIFIED IMPORTS: No complex config variants")
+            self.algorithm.Log("=" * 80)
+            
+        except Exception as e:
+            self.algorithm.Log("=" * 80)
+            self.algorithm.Log(f"CONFIG MANAGER: Configuration loaded (summary error: {str(e)})")
+            self.algorithm.Log("=" * 80)
     
     # =============================================================================
     # PUBLIC API METHODS - Enhanced with Single Strategy Awareness

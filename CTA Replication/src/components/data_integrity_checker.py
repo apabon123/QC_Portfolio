@@ -1,8 +1,11 @@
 class DataIntegrityChecker:
     """
-    OPTIMIZED DATA INTEGRITY CHECKER - LEVERAGING QC BUILT-INS
+    ENHANCED DATA INTEGRITY CHECKER WITH CENTRALIZED CACHING
     
-    Purpose: Maximize QuantConnect's native capabilities instead of re-engineering
+    Purpose: 
+    - Maximize QuantConnect's native capabilities instead of re-engineering
+    - SOLVE CONCURRENCY ISSUES: Centralize all History API calls to prevent multiple strategies from calling simultaneously
+    - Cache historical data to ensure consistency across all strategies
     - Uses Securities.HasData, IsTradable, Price validation
     - Leverages built-in symbol properties and market hours
     - Focuses only on what QC doesn't already provide
@@ -13,14 +16,17 @@ class DataIntegrityChecker:
         
         # Import configuration
         try:
-            from src.components.data_integrity_config import DATA_INTEGRITY_CONFIG
+            from config.data_integrity_config import DATA_INTEGRITY_CONFIG
             self.config = DATA_INTEGRITY_CONFIG
         except ImportError:
             # Fallback minimal config
             self.config = {
                 'max_zero_price_streak': 3,
                 'quarantine_duration_days': 5,
-                'price_ranges': {}
+                'price_ranges': {},
+                'cache_max_age_hours': 24,
+                'cache_cleanup_frequency_hours': 6,
+                'max_cache_entries': 1000
             }
         
         # Lightweight tracking - let QC handle most validation
@@ -32,6 +38,29 @@ class DataIntegrityChecker:
         self.zero_price_streaks = {}  # Count consecutive zero prices
         self.last_quarantine_check = None
         
+        # NEW: CENTRALIZED DATA CACHING to solve concurrency issues
+        self.history_cache = {}  # {cache_key: DataFrame}
+        self.cache_timestamps = {}  # {cache_key: timestamp}
+        self.cache_requests = {}  # {cache_key: request_count} - for debugging
+        self.last_cache_cleanup = None
+        
+        # NEW: Configuration for cache management
+        self.cache_config = {
+            'max_age_hours': self.config.get('cache_max_age_hours', 24),
+            'cleanup_frequency_hours': self.config.get('cache_cleanup_frequency_hours', 6),
+            'max_entries': self.config.get('max_cache_entries', 1000)
+        }
+        
+        # NEW: Statistics tracking
+        self.cache_stats = {
+            'hits': 0,
+            'misses': 0,
+            'api_calls_saved': 0,
+            'total_requests': 0
+        }
+        
+        self.algorithm.Log(f"DataIntegrityChecker: Enhanced with centralized caching (max_age={self.cache_config['max_age_hours']}h)")
+    
     def validate_slice(self, slice):
         """
         FOCUSED validation using QC's built-in capabilities
@@ -111,8 +140,12 @@ class DataIntegrityChecker:
                 self._reset_zero_price_streak(symbol)
             
             # 5. Additional validation to prevent QuantConnect errors
-            # Check if security has been mapped (for futures)
-            if hasattr(security, 'Mapped') and security.Mapped is None:
+            # Check if security has been mapped (for futures) - BUT ONLY FOR UNDERLYING CONTRACTS
+            # Don't quarantine continuous contracts just because they don't have a .Mapped property
+            symbol_str = str(symbol)
+            if (hasattr(security, 'Mapped') and security.Mapped is None and 
+                not symbol_str.startswith('/') and not symbol_str.startswith('futures/')):
+                # Only quarantine underlying contracts that should have a mapped property but don't
                 self._quarantine_symbol(symbol, "no_mapped_contract")
                 return False
             
@@ -310,4 +343,206 @@ class DataIntegrityChecker:
                 if symbol not in self.quarantined_symbols:
                     safe_symbols.append(symbol)
         
-        return safe_symbols 
+        return safe_symbols
+    
+    def get_history(self, symbol, periods, resolution=Resolution.Daily):
+        """
+        CENTRALIZED HISTORY PROVIDER - SOLVES CONCURRENCY ISSUES
+        
+        All strategies should call this method instead of algorithm.History directly.
+        This prevents multiple strategies from calling the History API simultaneously
+        and ensures data consistency across all strategies.
+        
+        Args:
+            symbol: Symbol to get history for
+            periods: Number of periods to get
+            resolution: Resolution (default: Daily)
+            
+        Returns:
+            pandas.DataFrame: Historical data or None if not available
+        """
+        try:
+            # Create cache key
+            cache_key = self._create_cache_key(symbol, periods, resolution)
+            
+            # Track request
+            self.cache_stats['total_requests'] += 1
+            self.cache_requests[cache_key] = self.cache_requests.get(cache_key, 0) + 1
+            
+            # Check cache first
+            if self._is_cache_valid(cache_key):
+                self.cache_stats['hits'] += 1
+                cached_data = self.history_cache[cache_key]
+                
+                # Debug logging for high-frequency requests
+                if self.cache_requests[cache_key] > 1:
+                    self.cache_stats['api_calls_saved'] += 1
+                    if self.cache_requests[cache_key] % 5 == 0:  # Log every 5th duplicate request
+                        ticker = self._extract_ticker(symbol)
+                        self.algorithm.Debug(f"DataCache: {ticker} served from cache {self.cache_requests[cache_key]} times (API calls saved: {self.cache_stats['api_calls_saved']})")
+                
+                return cached_data
+            
+            # Cache miss - validate symbol first
+            if not self._is_symbol_valid_for_history(symbol):
+                self.algorithm.Log(f"DataCache: Symbol {self._extract_ticker(symbol)} not valid for history request")
+                return None
+            
+            # Make the actual API call
+            self.cache_stats['misses'] += 1
+            self.algorithm.Debug(f"DataCache: Fetching history for {self._extract_ticker(symbol)} (periods={periods}, resolution={resolution})")
+            
+            # Use QC's native History API
+            history = self.algorithm.History(symbol, periods, resolution)
+            
+            if history is not None and not history.empty:
+                # Cache successful result
+                self.history_cache[cache_key] = history
+                self.cache_timestamps[cache_key] = self.algorithm.Time
+                
+                # Log successful cache
+                ticker = self._extract_ticker(symbol)
+                self.algorithm.Log(f"DataCache: Cached {len(history)} bars for {ticker}")
+                
+                # Cleanup cache if needed
+                self._cleanup_cache_if_needed()
+                
+                return history
+            else:
+                # Log failure but don't cache empty results
+                ticker = self._extract_ticker(symbol)
+                self.algorithm.Log(f"DataCache: No history data for {ticker} (periods={periods})")
+                return None
+                
+        except Exception as e:
+            self.algorithm.Error(f"DataCache: Error getting history for {symbol}: {str(e)}")
+            return None
+    
+    def _create_cache_key(self, symbol, periods, resolution):
+        """Create a unique cache key for the request."""
+        return f"{str(symbol)}_{periods}_{str(resolution)}"
+    
+    def _is_cache_valid(self, cache_key):
+        """Check if cached data is still valid."""
+        if cache_key not in self.history_cache:
+            return False
+        
+        if cache_key not in self.cache_timestamps:
+            return False
+        
+        cache_age_hours = (self.algorithm.Time - self.cache_timestamps[cache_key]).total_seconds() / 3600
+        return cache_age_hours < self.cache_config['max_age_hours']
+    
+    def _is_symbol_valid_for_history(self, symbol):
+        """Check if symbol is valid for history requests (lighter validation than full QC native)."""
+        try:
+            # Check if quarantined
+            if symbol in self.quarantined_symbols:
+                return False
+            
+            # Check if symbol exists in securities
+            if symbol not in self.algorithm.Securities:
+                return False
+            
+            # Basic validation - don't be too aggressive for history requests
+            security = self.algorithm.Securities[symbol]
+            
+            # Must have basic properties
+            if not hasattr(security, 'Price'):
+                return False
+            
+            return True
+            
+        except Exception as e:
+            return False
+    
+    def _cleanup_cache_if_needed(self):
+        """Clean up old cache entries if needed."""
+        try:
+            # Check if cleanup is needed
+            if self.last_cache_cleanup is None:
+                self.last_cache_cleanup = self.algorithm.Time
+                return
+            
+            hours_since_cleanup = (self.algorithm.Time - self.last_cache_cleanup).total_seconds() / 3600
+            if hours_since_cleanup < self.cache_config['cleanup_frequency_hours']:
+                return
+            
+            # Cleanup is needed
+            initial_count = len(self.history_cache)
+            
+            # Remove expired entries
+            expired_keys = []
+            for cache_key, timestamp in self.cache_timestamps.items():
+                cache_age_hours = (self.algorithm.Time - timestamp).total_seconds() / 3600
+                if cache_age_hours >= self.cache_config['max_age_hours']:
+                    expired_keys.append(cache_key)
+            
+            # Remove expired entries
+            for key in expired_keys:
+                if key in self.history_cache:
+                    del self.history_cache[key]
+                if key in self.cache_timestamps:
+                    del self.cache_timestamps[key]
+                if key in self.cache_requests:
+                    del self.cache_requests[key]
+            
+            # If still too many entries, remove oldest
+            if len(self.history_cache) > self.cache_config['max_entries']:
+                # Sort by timestamp and remove oldest
+                sorted_keys = sorted(self.cache_timestamps.items(), key=lambda x: x[1])
+                keys_to_remove = [key for key, _ in sorted_keys[:len(self.history_cache) - self.cache_config['max_entries']]]
+                
+                for key in keys_to_remove:
+                    if key in self.history_cache:
+                        del self.history_cache[key]
+                    if key in self.cache_timestamps:
+                        del self.cache_timestamps[key]
+                    if key in self.cache_requests:
+                        del self.cache_requests[key]
+            
+            final_count = len(self.history_cache)
+            removed_count = initial_count - final_count
+            
+            if removed_count > 0:
+                self.algorithm.Log(f"DataCache: Cleaned up {removed_count} expired entries ({final_count} remaining)")
+            
+            self.last_cache_cleanup = self.algorithm.Time
+            
+        except Exception as e:
+            self.algorithm.Error(f"DataCache: Error during cleanup: {str(e)}")
+    
+    def get_cache_stats(self):
+        """Get cache performance statistics."""
+        total_requests = self.cache_stats['total_requests']
+        if total_requests == 0:
+            hit_rate = 0.0
+        else:
+            hit_rate = (self.cache_stats['hits'] / total_requests) * 100
+        
+        return {
+            'total_requests': total_requests,
+            'cache_hits': self.cache_stats['hits'],
+            'cache_misses': self.cache_stats['misses'],
+            'hit_rate_percent': round(hit_rate, 1),
+            'api_calls_saved': self.cache_stats['api_calls_saved'],
+            'cache_entries': len(self.history_cache),
+            'max_cache_entries': self.cache_config['max_entries']
+        }
+    
+    def clear_cache(self):
+        """Clear all cached data (for testing or memory management)."""
+        initial_count = len(self.history_cache)
+        self.history_cache.clear()
+        self.cache_timestamps.clear()
+        self.cache_requests.clear()
+        
+        # Reset stats
+        self.cache_stats = {
+            'hits': 0,
+            'misses': 0,
+            'api_calls_saved': 0,
+            'total_requests': 0
+        }
+        
+        self.algorithm.Log(f"DataCache: Cleared {initial_count} cache entries") 

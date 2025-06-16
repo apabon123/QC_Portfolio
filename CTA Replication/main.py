@@ -8,18 +8,40 @@ without containing the bulk implementation details.
 """
 
 from AlgorithmImports import *
+import sys
+import os
+
+# Add src directory to Python path for QuantConnect compatibility
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 # Import core components from organized folders
-from src.components.algorithm_config_manager import AlgorithmConfigManager
-from src.components.three_layer_orchestrator import ThreeLayerOrchestrator  
-from src.components.portfolio_execution_manager import PortfolioExecutionManager
-from src.components.system_reporter import SystemReporter
-from src.components.universe import FuturesManager
-
-# Import fallback implementations
-from src.utils.fallback_implementations import FallbackComponents
-from src.utils.universe_helpers import UniverseHelpers
-from src.utils.futures_helpers import FuturesHelpers
+# Use QuantConnect cloud-compatible import paths
+try:
+    # Try importing with relative paths (QC cloud compatible)
+    sys.path.append(os.path.join(os.path.dirname(__file__), 'src', 'config'))
+    sys.path.append(os.path.join(os.path.dirname(__file__), 'src', 'components'))
+    sys.path.append(os.path.join(os.path.dirname(__file__), 'src', 'utils'))
+    
+    # Import configuration first (most critical)
+    from algorithm_config_manager import AlgorithmConfigManager
+    
+    # Import other components
+    from three_layer_orchestrator import ThreeLayerOrchestrator  
+    from portfolio_execution_manager import PortfolioExecutionManager
+    from system_reporter import SystemReporter
+    from universe import FuturesManager
+    
+    # Import utilities
+    from fallback_implementations import FallbackComponents
+    from universe_helpers import UniverseHelpers
+    from futures_helpers import FuturesHelpers
+    
+    IMPORTS_SUCCESSFUL = True
+    IMPORT_ERROR = None
+except ImportError as e:
+    # Fallback for QuantConnect cloud environment
+    IMPORTS_SUCCESSFUL = False
+    IMPORT_ERROR = str(e)
 
 class ThreeLayerCTAPortfolio(QCAlgorithm):
     """
@@ -41,6 +63,13 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             self.Log("INITIALIZING THREE-LAYER CTA PORTFOLIO SYSTEM")
             self.Log("="*80)
             
+            # Check if imports were successful
+            if not IMPORTS_SUCCESSFUL:
+                self.Error(f"CRITICAL: Module imports failed: {IMPORT_ERROR}")
+                self.Error("Attempting emergency fallback initialization...")
+                self._emergency_fallback_initialization()
+                return
+            
             # Initialize tracking variables
             self._warmup_completed = False
             self._first_rebalance_attempted = False
@@ -60,9 +89,43 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self.Log("SUCCESS: Configuration manager initialized")
             except Exception as e:
                 self.Log(f"Using fallback configuration: {str(e)}")
-                fallback = FallbackComponents()
-                self.config = fallback.create_fallback_config()
-                self.config_manager = fallback.create_fallback_config_manager(self.config)
+                # Inline fallback configuration
+                self.config = {
+                    'algorithm': {'start_date': {'year': 2015, 'month': 1, 'day': 1}, 'end_date': {'year': 2020, 'month': 1, 'day': 1}, 'initial_cash': 10000000},
+                    'strategies': {'KestnerCTA': {'enabled': True, 'name': 'KestnerCTA'}},
+                    'universe': {
+                        'futures': {
+                            'ES': {'name': 'E-mini S&P 500', 'priority': 1, 'category': 'equity_index'},
+                            'NQ': {'name': 'E-mini NASDAQ 100', 'priority': 1, 'category': 'equity_index'},
+                            'ZN': {'name': '10-Year Treasury Note', 'priority': 1, 'category': 'bond'}
+                        },
+                        'expansion_candidates': {}
+                    },
+                    'execution': {
+                        'rollover_config': {'enabled': True},
+                        'min_trade_value': 1000,
+                        'min_weight_change': 0.01,
+                        'max_single_order_value': 50000000
+                    },
+                    'portfolio_risk': {
+                        'max_single_position': 10.0,
+                        'daily_stop_loss': 0.2,
+                        'target_portfolio_vol': 0.6
+                    },
+                    'constraints': {
+                        'min_capital': 5000000,
+                        'initial_capital': 10000000,
+                        'max_total_positions': 50
+                    },
+                    'system': {'name': 'Three-Layer CTA System', 'version': '1.0.0', 'description': 'QuantConnect Three-Layer CTA Portfolio System (Inline Fallback)', 'last_updated': '2024-01-01'}
+                }
+                
+                class InlineConfigManager:
+                    def __init__(self, config): self.config = config
+                    def get_config(self): return self.config
+                    def get_enabled_strategies(self): return {name: config for name, config in self.config['strategies'].items() if config.get('enabled', False)}
+                
+                self.config_manager = InlineConfigManager(self.config)
             
             # Step 2.5: Initialize QuantConnect Native Features
             self.Log("Step 2.5: Initializing QuantConnect native features...")
@@ -83,8 +146,11 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             except Exception as e:
                 self.Log(f"Using minimal universe management: {str(e)}")
                 # Create minimal futures manager as fallback
-                fallback = FallbackComponents()
-                self.futures_manager = fallback.create_minimal_futures_manager(self)
+                class MinimalFuturesManager:
+                    def __init__(self, algorithm): self.algorithm = algorithm
+                    def get_liquid_symbols(self): return ['ES', 'NQ', 'ZN']
+                
+                self.futures_manager = MinimalFuturesManager(self)
                 self.universe_data = {'tickers': ['ES', 'NQ', 'ZN'], 'symbols': self.futures_symbols}
             
             # Step 4: Initialize orchestrator
@@ -95,8 +161,15 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self.Log("SUCCESS: Orchestrator initialized")
             except Exception as e:
                 self.Log(f"Using minimal orchestrator: {str(e)}")
-                fallback = FallbackComponents()
-                self.orchestrator = fallback.create_minimal_orchestrator(self)
+                # Create minimal orchestrator as fallback
+                class MinimalOrchestrator:
+                    def __init__(self, algorithm): self.algorithm = algorithm
+                    def initialize_system(self): pass
+                    def OnSecuritiesChanged(self, changes): pass
+                    def update_with_data(self, slice): pass
+                    def update_during_warmup(self, slice): pass
+                
+                self.orchestrator = MinimalOrchestrator(self)
             
             # Step 5: Initialize execution manager
             self.Log("Step 5: Initializing execution manager...")
@@ -105,13 +178,16 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self.Log("SUCCESS: Execution manager initialized")
             except Exception as e:
                 self.Log(f"Using minimal execution manager: {str(e)}")
-                fallback = FallbackComponents()
-                self.execution_manager = fallback.create_minimal_execution_manager(self)
+                # Create minimal execution manager as fallback
+                class MinimalExecutionManager:
+                    def __init__(self, algorithm): self.algorithm = algorithm
+                
+                self.execution_manager = MinimalExecutionManager(self)
             
             # Step 6: Initialize data integrity checker (CRITICAL FOR PRIORITY 2 FUTURES)
             self.Log("Step 6: Initializing data integrity checker...")
             try:
-                from src.components.data_integrity_checker import DataIntegrityChecker
+                from components.data_integrity_checker import DataIntegrityChecker
                 self.data_integrity_checker = DataIntegrityChecker(self)
                 self.Log("SUCCESS: Data integrity checker initialized")
             except Exception as e:
@@ -122,12 +198,22 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             # Step 6b: Initialize bad data position manager (NEW TARGETED APPROACH)
             self.Log("Step 6b: Initializing bad data position manager...")
             try:
-                from src.components.bad_data_position_manager import BadDataPositionManager
+                from components.bad_data_position_manager import BadDataPositionManager
                 self.bad_data_position_manager = BadDataPositionManager(self, self.config_manager)
                 self.Log("SUCCESS: Bad data position manager initialized")
             except Exception as e:
                 self.Log(f"Warning: Bad data position manager failed: {str(e)}")
                 self.bad_data_position_manager = None
+            
+            # Step 6c: Initialize QC native contract resolver (FIXES /ZN vs ZN mapping issues)
+            self.Log("Step 6c: Initializing QC native contract resolver...")
+            try:
+                from components.qc_native_contract_resolver import QCNativeContractResolver
+                self.contract_resolver = QCNativeContractResolver(self)
+                self.Log("SUCCESS: QC native contract resolver initialized")
+            except Exception as e:
+                self.Log(f"Warning: QC native contract resolver failed: {str(e)}")
+                self.contract_resolver = None
             
             # Step 7: Initialize system reporter
             self.Log("Step 7: Initializing system reporter...")
@@ -136,8 +222,12 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self.Log("SUCCESS: System reporter initialized")
             except Exception as e:
                 self.Log(f"Using minimal system reporter: {str(e)}")
-                fallback = FallbackComponents()
-                self.system_reporter = fallback.create_minimal_system_reporter(self)
+                # Create minimal system reporter as fallback
+                class MinimalSystemReporter:
+                    def __init__(self, algorithm): self.algorithm = algorithm
+                    def track_rollover_cost(self, old_symbol, new_symbol, quantity): pass
+                
+                self.system_reporter = MinimalSystemReporter(self)
             
             # Step 8: Schedule rebalancing
             self.Log("Step 8: Scheduling rebalancing...")
@@ -179,6 +269,13 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self.MonthlyReporting
             )
             
+            # Daily continuous contract validation (fixes /ZN vs ZN mapping issues)
+            self.Schedule.On(
+                self.DateRules.EveryDay(),
+                self.TimeRules.At(9, 0),
+                self.ValidateContinuousContracts
+            )
+            
             self.Log("Rebalancing schedule configured: Weekly + Monthly")
             
         except Exception as e:
@@ -189,11 +286,81 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
         self.Log("EMERGENCY FALLBACK: Initializing minimal system...")
         
         try:
-            fallback = FallbackComponents()
-            self.config = fallback.create_fallback_config()
-            self.orchestrator = fallback.create_minimal_orchestrator(self)
-            self.execution_manager = fallback.create_minimal_execution_manager(self)
-            self.system_reporter = fallback.create_minimal_system_reporter(self)
+            # Create inline minimal configuration
+            self.config = {
+                'algorithm': {
+                    'start_date': {'year': 2015, 'month': 1, 'day': 1},
+                    'end_date': {'year': 2020, 'month': 1, 'day': 1},
+                    'initial_cash': 10000000,
+                    'warmup_period_days': 80
+                },
+                'strategies': {
+                    'KestnerCTA': {
+                        'enabled': True,
+                        'name': 'KestnerCTA',
+                        'momentum_lookbacks': [16, 32, 52],
+                        'volatility_lookback_days': 63,
+                        'target_volatility': 0.2,
+                        'rebalance_frequency': 'weekly',
+                        'max_position_weight': 0.6
+                    }
+                },
+                'universe': {
+                    'futures': {
+                        'ES': {'name': 'E-mini S&P 500', 'priority': 1, 'category': 'equity_index'},
+                        'NQ': {'name': 'E-mini NASDAQ 100', 'priority': 1, 'category': 'equity_index'},
+                        'ZN': {'name': '10-Year Treasury Note', 'priority': 1, 'category': 'bond'}
+                    },
+                    'expansion_candidates': {}
+                },
+                'execution': {
+                    'rollover_config': {
+                        'enabled': True,
+                        'order_type': 'market',
+                        'retry_attempts': 3,
+                        'log_rollover_events': True
+                    },
+                    'min_trade_value': 1000,
+                    'min_weight_change': 0.01,
+                    'max_single_order_value': 50000000
+                },
+                'portfolio_risk': {
+                    'max_single_position': 10.0,
+                    'daily_stop_loss': 0.2,
+                    'target_portfolio_vol': 0.6
+                },
+                'constraints': {
+                    'min_capital': 5000000,
+                    'initial_capital': 10000000,
+                    'max_total_positions': 50
+                },
+                'system': {
+                    'name': 'Three-Layer CTA System',
+                    'version': '1.0.0',
+                    'description': 'QuantConnect Three-Layer CTA Portfolio System (Emergency Fallback)',
+                    'last_updated': '2024-01-01'
+                }
+            }
+            
+            # Create minimal config manager
+            class MinimalConfigManager:
+                def __init__(self, config):
+                    self.config = config
+                
+                def get_config(self):
+                    return self.config
+                
+                def get_enabled_strategies(self):
+                    return {name: config for name, config in self.config['strategies'].items() 
+                            if config.get('enabled', False)}
+            
+            self.config_manager = MinimalConfigManager(self.config)
+            
+            # Set basic QuantConnect parameters
+            self.SetStartDate(2015, 1, 1)
+            self.SetEndDate(2020, 1, 1)
+            self.SetCash(10000000)
+            self.SetWarmup(80)
             
             # Try to add at least one future
             try:
@@ -201,27 +368,86 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 future.SetFilter(0, 182)
                 self.futures_symbols = [future.Symbol]
                 self.Log("Emergency fallback: Added ES future")
-            except:
+            except Exception as e:
+                self.Error(f"Failed to add ES future: {str(e)}")
                 self.futures_symbols = []
+            
+            # Create minimal orchestrator stub
+            class MinimalOrchestrator:
+                def __init__(self, algorithm):
+                    self.algorithm = algorithm
+                
+                def OnSecuritiesChanged(self, changes):
+                    pass
+                
+                def update_with_data(self, slice):
+                    pass
+                
+                def update_during_warmup(self, slice):
+                    pass
+            
+            self.orchestrator = MinimalOrchestrator(self)
+            
+            # Schedule basic rebalancing
+            self.Schedule.On(
+                self.DateRules.WeekEnd(), 
+                self.TimeRules.At(16, 0), 
+                self.WeeklyRebalance
+            )
             
             self.Log("Emergency fallback initialization complete")
             
         except Exception as e:
             self.Error(f"Emergency fallback failed: {str(e)}")
+            # Final fallback - just set minimum QC parameters
+            try:
+                self.SetStartDate(2015, 1, 1)
+                self.SetEndDate(2020, 1, 1)
+                self.SetCash(10000000)
+                self.Log("Final fallback: Set basic algorithm parameters only")
+            except Exception as final_e:
+                self.Error(f"Final fallback also failed: {str(final_e)}")
     
     def OnSecuritiesChanged(self, changes):
         """Forward security changes to orchestrator for strategy initialization."""
         try:
+            # Log securities changes for diagnostics (helps understand /ZN timing issues)
+            for security in changes.AddedSecurities:
+                symbol = security.Symbol
+                symbol_str = str(symbol)
+                
+                # Log continuous vs underlying contracts
+                if symbol_str.startswith('/') or symbol_str.startswith('futures/'):
+                    self.Log(f"QC Added: Continuous contract {symbol_str}")
+                elif security.Type == SecurityType.Future:
+                    self.Log(f"QC Added: Underlying contract {symbol_str}")
+            
+            for security in changes.RemovedSecurities:
+                self.Log(f"QC Removed: {security.Symbol}")
+            
+            # Forward to orchestrator - QC handles all the mapping automatically
             if hasattr(self, 'orchestrator'):
                 self.orchestrator.OnSecuritiesChanged(changes)
+                
         except Exception as e:
             self.Error(f"Error in OnSecuritiesChanged: {str(e)}")
     
     def OnSymbolChangedEvents(self, symbolChangedEvents):
         """Handle futures rollover events using config-driven settings."""
         try:
-            # Get rollover configuration from config
-            rollover_config = self.config_manager.get_config()['execution']['rollover_config']
+            # Get rollover configuration from config with defensive access
+            config = self.config_manager.get_config()
+            execution_config = config.get('execution', {})
+            rollover_config = execution_config.get('rollover_config', {
+                'enabled': True,
+                'order_type': 'market',
+                'retry_attempts': 3,
+                'log_rollover_events': True,
+                'rollover_tag_prefix': 'ROLLOVER',
+                'validate_rollover_contracts': True,
+                'emergency_liquidation': True,
+                'track_rollover_costs': True
+            })
             
             # Check if rollover handling is enabled
             if not rollover_config.get('enabled', True):
@@ -740,6 +966,41 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             
         except Exception as e:
             self.Error(f"Error in monthly reporting: {str(e)}")
+    
+    def ValidateContinuousContracts(self):
+        """Daily validation using QC native functionality to diagnose /ZN vs ZN issues."""
+        try:
+            if hasattr(self, 'contract_resolver') and self.contract_resolver:
+                self.Log("Starting daily QC native contract validation...")
+                
+                # Log QC's native status for all futures
+                self.contract_resolver.log_qc_native_status()
+                
+                # Get diagnostics report
+                diagnostics = self.contract_resolver.get_diagnostics_report()
+                
+                self.Log(f"QC Native Status: "
+                        f"Failed history requests: {diagnostics['failed_history_requests']}, "
+                        f"Initialized symbols: {diagnostics['initialized_symbols']}")
+                
+                # Alert if there are persistent failures
+                if diagnostics['failed_history_requests'] > 0:
+                    self.Log(f"WARNING: {diagnostics['failed_history_requests']} symbols have history failures: "
+                           f"{diagnostics['failed_symbols']}")
+                    
+                    # Test history requests for failed symbols to understand the timing issue
+                    for symbol_str in diagnostics['failed_symbols'][:3]:  # Test first 3
+                        symbol = next((s for s in self.Securities.Keys if str(s) == symbol_str), None)
+                        if symbol:
+                            self.Log(f"Testing history for {symbol_str}...")
+                            test_history = self.contract_resolver.get_history_with_diagnostics(symbol, 10)
+                            if test_history is not None:
+                                self.Log(f"  SUCCESS: Got {len(test_history)} bars")
+                            else:
+                                self.Log(f"  FAILED: No history returned")
+        
+        except Exception as e:
+            self.Error(f"Error in QC native contract validation: {str(e)}")
     
     def OnEndOfAlgorithm(self):
         """Generate final algorithm report."""

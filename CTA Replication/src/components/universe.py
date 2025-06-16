@@ -179,24 +179,78 @@ class FuturesManager:
         """
         Add futures universe using QC's native methods
         Leverage QC's built-in futures chain and contract management
+        FIXED: Check if symbols are already added before trying to add them again
         """
         try:
             added_count = 0
+            found_existing_count = 0
             
             # Process each priority group
             for priority in sorted(self.priority_groups.keys()):
                 symbols = self.priority_groups[priority]
-                self.algorithm.Log(f"Adding Priority {priority} futures ({len(symbols)} symbols)...")
+                self.algorithm.Log(f"Processing Priority {priority} futures ({len(symbols)} symbols)...")
                 
                 for symbol_config in symbols:
-                    symbol_added = self._add_single_future_qc_native(symbol_config, priority)
-                    if symbol_added:
-                        added_count += 1
+                    # CRITICAL FIX: Check if symbol is already in Securities first
+                    if isinstance(symbol_config, dict):
+                        ticker = symbol_config.get('ticker')
+                    else:
+                        ticker = str(symbol_config)
+                    
+                    # Look for existing symbols in the algorithm's Securities
+                    existing_symbol = self._find_existing_symbol(ticker)
+                    
+                    if existing_symbol:
+                        # Use the existing symbol instead of adding a new one
+                        self.algorithm.Log(f"FuturesManager: Found existing symbol for {ticker}: {existing_symbol}")
+                        self.futures_symbols.append(existing_symbol)
+                        
+                        # Initialize our custom tracking for existing symbol
+                        self.rollover_state[existing_symbol] = {
+                            'priority': priority,
+                            'ticker': ticker,
+                            'market': 'CME',
+                            'last_contract': None,
+                            'rollover_count': 0
+                        }
+                        
+                        found_existing_count += 1
+                    else:
+                        # Symbol doesn't exist, try to add it
+                        symbol_added = self._add_single_future_qc_native(symbol_config, priority)
+                        if symbol_added:
+                            added_count += 1
             
-            self.algorithm.Log(f"FuturesManager: Successfully added {added_count} futures contracts")
+            self.algorithm.Log(f"FuturesManager: Found {found_existing_count} existing symbols, added {added_count} new symbols")
+            self.algorithm.Log(f"FuturesManager: Total symbols managed: {len(self.futures_symbols)}")
             
         except Exception as e:
             self.algorithm.Error(f"FuturesManager: Error adding futures universe: {str(e)}")
+    
+    def _find_existing_symbol(self, ticker):
+        """
+        Find existing symbol in algorithm's Securities collection.
+        Look for both continuous contract formats (e.g., /ES, futures/ES)
+        """
+        try:
+            # Check different symbol formats that might exist
+            possible_symbols = [
+                f"/{ticker}",  # e.g., /ES
+                f"futures/{ticker}",  # e.g., futures/ES  
+                ticker,  # e.g., ES
+            ]
+            
+            for symbol_str in possible_symbols:
+                for existing_symbol in self.algorithm.Securities.Keys:
+                    if str(existing_symbol) == symbol_str or str(existing_symbol).endswith(f"/{ticker}"):
+                        self.algorithm.Log(f"FuturesManager: Matched {ticker} -> {existing_symbol}")
+                        return existing_symbol
+            
+            return None
+            
+        except Exception as e:
+            self.algorithm.Error(f"FuturesManager: Error finding existing symbol for {ticker}: {str(e)}")
+            return None
     
     def _add_single_future_qc_native(self, symbol_config, priority):
         """
@@ -256,14 +310,30 @@ class FuturesManager:
         liquid_symbols = []
         
         try:
+            self.algorithm.Log(f"FuturesManager: Checking {len(self.futures_symbols)} symbols for liquidity")
+            
             for symbol in self.futures_symbols:
+                symbol_str = str(symbol)
+                
                 # Use QC's built-in validation methods
                 if self._is_symbol_tradable_qc_native(symbol):
                     liquid_symbols.append(symbol)
+                    self.algorithm.Log(f"FuturesManager: {symbol_str} is LIQUID")
+                else:
+                    # Log why it's not liquid for debugging
+                    if symbol in self.algorithm.Securities:
+                        security = self.algorithm.Securities[symbol]
+                        has_data = getattr(security, 'HasData', False)
+                        is_tradable = getattr(security, 'IsTradable', False)
+                        price = getattr(security, 'Price', None)
+                        self.algorithm.Log(f"FuturesManager: {symbol_str} NOT liquid - HasData:{has_data}, IsTradable:{is_tradable}, Price:{price}")
+                    else:
+                        self.algorithm.Log(f"FuturesManager: {symbol_str} NOT in Securities")
         
         except Exception as e:
             self.algorithm.Error(f"FuturesManager: Error getting liquid symbols: {str(e)}")
         
+        self.algorithm.Log(f"FuturesManager: Found {len(liquid_symbols)} liquid symbols out of {len(self.futures_symbols)} total")
         return liquid_symbols
     
     def _is_symbol_tradable_qc_native(self, symbol):
