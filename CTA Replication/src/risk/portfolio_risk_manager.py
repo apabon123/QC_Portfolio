@@ -19,39 +19,49 @@ class PortfolioRiskManager:
     UPDATED: Now uses QC's built-in performance tracking when configured
     """
     
-    def __init__(self, algorithm, config=None):
+    def __init__(self, algorithm, config_manager):
+        """
+        Initialize Portfolio Risk Manager with centralized configuration.
+        CRITICAL: All configuration comes through centralized config manager only.
+        """
         self.algorithm = algorithm
+        self.config_manager = config_manager
         
-        # Default configuration
-        self.config = {
-            'target_portfolio_vol': 0.20,        # 20% target volatility
-            'min_notional_exposure': 3,       # Minimum 60% deployed
-            'max_leverage_multiplier': 10.0,      # Maximum 10x leverage
-            'daily_stop_loss': 0.20,             # 2% daily portfolio stop
-            'max_drawdown_stop': 0.75,           # 15% max drawdown stop
-            'vol_estimation_days': 63,           # 3 months for vol estimation
+        try:
+            # Get risk configuration through centralized manager ONLY
+            self.config = self.config_manager.get_risk_config()
             
-            # NEW: QC Integration Settings
-            'use_qc_performance': True,          # Use QC's built-in performance tracking
-            'use_qc_portfolio': True,            # Use QC's Portfolio object
-            'log_performance': True,             # Log performance metrics
-        }
-        
-        if config:
-            self.config.update(config)
-        
-        # Legacy tracking (kept as fallback or when QC features disabled)
-        self.portfolio_returns = deque(maxlen=self.config['vol_estimation_days'])
-        self.portfolio_peak = 0.0
-        self.stop_triggered = False
-        self.last_portfolio_value = 0.0
-        
-        # QC Performance tracking
-        self.use_qc_features = self.config.get('use_qc_performance', True)
-        self.initial_portfolio_value = None
-        
-        self.algorithm.Log(f"Layer3 RiskManager: Initialized with QC features {'ENABLED' if self.use_qc_features else 'DISABLED'}")
-        self.algorithm.Log(f"Layer3 RiskManager: Config: {self.config}")
+            # Validate critical risk parameters exist
+            required_params = [
+                'target_portfolio_vol', 'max_leverage_multiplier', 'min_notional_exposure',
+                'daily_stop_loss', 'max_drawdown_stop'
+            ]
+            
+            for param in required_params:
+                if param not in self.config:
+                    error_msg = f"Missing required risk parameter: {param}"
+                    self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                    raise ValueError(error_msg)
+            
+            # Initialize tracking variables
+            vol_estimation_days = self.config.get('vol_estimation_days', 252)
+            self.portfolio_returns = deque(maxlen=vol_estimation_days)
+            self.last_portfolio_value = None
+            self.peak_portfolio_value = None
+            self.current_drawdown = 0.0
+            
+            # Performance tracking
+            self.use_qc_features = self.config.get('use_qc_performance', True)
+            self.risk_adjustments_made = 0
+            self.volatility_scalings = 0
+            self.position_limits_applied = 0
+            
+            self.algorithm.Log(f"PortfolioRiskManager: Initialized with target vol {self.config['target_portfolio_vol']:.1%}")
+            
+        except Exception as e:
+            error_msg = f"CRITICAL ERROR initializing PortfolioRiskManager: {str(e)}"
+            self.algorithm.Error(error_msg)
+            raise ValueError(error_msg)
     
     def update_portfolio_performance(self, current_portfolio_value=None):
         """
@@ -65,9 +75,8 @@ class PortfolioRiskManager:
             current_portfolio_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
         
         # Initialize tracking on first call
-        if self.initial_portfolio_value is None:
-            self.initial_portfolio_value = current_portfolio_value
-            self.portfolio_peak = current_portfolio_value
+        if self.peak_portfolio_value is None:
+            self.peak_portfolio_value = current_portfolio_value
             self.last_portfolio_value = current_portfolio_value
             return
         
@@ -80,8 +89,8 @@ class PortfolioRiskManager:
             self._update_custom_performance_tracking(current_portfolio_value)
         
         # Always update peak for drawdown calculation
-        if current_portfolio_value > self.portfolio_peak:
-            self.portfolio_peak = current_portfolio_value
+        if current_portfolio_value > self.peak_portfolio_value:
+            self.peak_portfolio_value = current_portfolio_value
         
         # Log performance if configured
         if self.config.get('log_performance', False):
@@ -109,9 +118,9 @@ class PortfolioRiskManager:
     
     def _log_performance_summary(self, current_portfolio_value):
         """Log performance summary using QC or custom data"""
-        if self.initial_portfolio_value and self.initial_portfolio_value > 0:
-            total_return = (current_portfolio_value - self.initial_portfolio_value) / self.initial_portfolio_value
-            drawdown = (self.portfolio_peak - current_portfolio_value) / self.portfolio_peak if self.portfolio_peak > 0 else 0
+        if self.peak_portfolio_value and self.peak_portfolio_value > 0:
+            total_return = (current_portfolio_value - self.peak_portfolio_value) / self.peak_portfolio_value
+            drawdown = (self.peak_portfolio_value - current_portfolio_value) / self.peak_portfolio_value if self.peak_portfolio_value > 0 else 0
             
             if self.use_qc_features:
                 # Access QC's portfolio statistics
@@ -240,8 +249,8 @@ class PortfolioRiskManager:
                 return True
         
         # Maximum drawdown stop
-        if self.portfolio_peak > 0:
-            current_drawdown = (self.portfolio_peak - current_portfolio_value) / self.portfolio_peak
+        if self.peak_portfolio_value > 0:
+            current_drawdown = (self.peak_portfolio_value - current_portfolio_value) / self.peak_portfolio_value
             if current_drawdown > self.config['max_drawdown_stop']:
                 self.algorithm.Log(f"Layer3: Max drawdown stop triggered - {current_drawdown:.2%} drawdown")
                 return True
@@ -254,13 +263,13 @@ class PortfolioRiskManager:
         
         metrics = {
             'portfolio_value': current_portfolio_value,
-            'portfolio_peak': self.portfolio_peak,
+            'portfolio_peak': self.peak_portfolio_value,
             'target_vol': self.config['target_portfolio_vol'],
             'min_exposure': self.config['min_notional_exposure']
         }
         
-        if self.portfolio_peak > 0:
-            metrics['current_drawdown'] = (self.portfolio_peak - current_portfolio_value) / self.portfolio_peak
+        if self.peak_portfolio_value > 0:
+            metrics['current_drawdown'] = (self.peak_portfolio_value - current_portfolio_value) / self.peak_portfolio_value
         
         if len(self.portfolio_returns) > 20:
             returns_array = np.array(list(self.portfolio_returns))

@@ -30,8 +30,19 @@ class FuturesHelpers:
         
         for ticker in tickers:
             try:
-                # Try basic AddFuture first
-                future = self.algorithm.AddFuture(ticker)
+                # Try modern AddFuture with proper parameters first
+                market = ticker_markets.get(ticker, Market.CME)
+                future = self.algorithm.AddFuture(
+                    ticker=ticker,
+                    resolution=Resolution.Daily,
+                    market=market,
+                    fillForward=True,
+                    leverage=1.0,
+                    extendedMarketHours=False,
+                    dataMappingMode=DataMappingMode.OpenInterest,
+                    dataNormalizationMode=DataNormalizationMode.BackwardsPanamaCanal,
+                    contractDepthOffset=0
+                )
                 symbol_str = str(future.Symbol)
                 symbols.append(symbol_str)
                 self.algorithm.Log(f"FuturesHelper: ✓ Added {ticker} -> {symbol_str}")
@@ -44,14 +55,13 @@ class FuturesHelpers:
                     self.algorithm.Log(f"FuturesHelper: ⚠ Could not set filter for {ticker}: {str(filter_e)}")
                     
             except Exception as e:
-                self.algorithm.Log(f"FuturesHelper: ✗ Failed basic AddFuture for {ticker}: {str(e)}")
-                # Try with market specification
+                self.algorithm.Log(f"FuturesHelper: ✗ Failed modern AddFuture for {ticker}: {str(e)}")
+                # Try basic AddFuture as fallback
                 try:
-                    market = ticker_markets.get(ticker, Market.CME)
-                    future = self.algorithm.AddFuture(ticker, Resolution.Daily, market)
+                    future = self.algorithm.AddFuture(ticker)
                     symbol_str = str(future.Symbol)
                     symbols.append(symbol_str)
-                    self.algorithm.Log(f"FuturesHelper: ✓ Added with market {ticker} -> {symbol_str}")
+                    self.algorithm.Log(f"FuturesHelper: ✓ Added basic {ticker} -> {symbol_str}")
                     
                     # Set filter
                     try:
@@ -61,7 +71,7 @@ class FuturesHelpers:
                         self.algorithm.Log(f"FuturesHelper: ⚠ Could not set filter for {ticker}: {str(filter_e)}")
                         
                 except Exception as e2:
-                    self.algorithm.Log(f"FuturesHelper: ✗ Failed with market for {ticker}: {str(e2)}")
+                    self.algorithm.Log(f"FuturesHelper: ✗ Failed basic AddFuture for {ticker}: {str(e2)}")
         
         self.algorithm.Log(f"FuturesHelper: Successfully added {len(symbols)}/{len(tickers)} futures")
         return symbols
@@ -76,16 +86,17 @@ class FuturesHelpers:
             }
         
         try:
+            # Only SetFilter is still available on the symbol object
             if hasattr(symbol, 'SetFilter'):
                 symbol.SetFilter(timedelta(0), timedelta(settings['filter_days_out']))
+                self.algorithm.Log(f"FuturesHelper: Set filter for {symbol}")
             
-            if hasattr(symbol, 'SetDataMappingMode'):
-                symbol.SetDataMappingMode(settings['data_mapping_mode'])
+            # Note: SetDataMappingMode and SetDataNormalizationMode are deprecated
+            # These settings must be passed to AddFuture() directly during symbol creation
+            # This method now only handles post-creation configuration
             
-            if hasattr(symbol, 'SetDataNormalizationMode'):
-                symbol.SetDataNormalizationMode(settings['data_normalization_mode'])
-            
-            self.algorithm.Log(f"FuturesHelper: Configured settings for {symbol}")
+            self.algorithm.Log(f"FuturesHelper: Configured available settings for {symbol}")
+            self.algorithm.Log(f"FuturesHelper: Note - Data mapping/normalization modes must be set during AddFuture()")
             return True
             
         except Exception as e:

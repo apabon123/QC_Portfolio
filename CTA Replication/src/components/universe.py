@@ -179,53 +179,123 @@ class FuturesManager:
         """
         Add futures universe using QC's native methods
         Leverage QC's built-in futures chain and contract management
-        FIXED: Check if symbols are already added before trying to add them again
+        CRITICAL: No fallback logic - fail fast if configuration is wrong
         """
         try:
             added_count = 0
             found_existing_count = 0
             
-            # Process each priority group
+            # VALIDATION: Ensure we have valid priority groups from configuration
+            if not self.priority_groups:
+                error_msg = "CRITICAL ERROR: No priority groups found in configuration"
+                self.algorithm.Error(error_msg)
+                raise ValueError(error_msg)
+            
+            total_configured_symbols = sum(len(symbols) for symbols in self.priority_groups.values())
+            if total_configured_symbols == 0:
+                error_msg = "CRITICAL ERROR: No symbols found in any priority group"
+                self.algorithm.Error(error_msg)
+                raise ValueError(error_msg)
+            
+            self.algorithm.Log(f"FuturesManager: Processing {total_configured_symbols} configured symbols")
+            
+            # Process symbols by priority (1 = highest priority)
             for priority in sorted(self.priority_groups.keys()):
                 symbols = self.priority_groups[priority]
-                self.algorithm.Log(f"Processing Priority {priority} futures ({len(symbols)} symbols)...")
+                self.algorithm.Log(f"Processing priority {priority}: {len(symbols)} symbols")
                 
                 for symbol_config in symbols:
-                    # CRITICAL FIX: Check if symbol is already in Securities first
-                    if isinstance(symbol_config, dict):
-                        ticker = symbol_config.get('ticker')
-                    else:
-                        ticker = str(symbol_config)
+                    ticker = symbol_config['ticker']
                     
-                    # Look for existing symbols in the algorithm's Securities
-                    existing_symbol = self._find_existing_symbol(ticker)
-                    
-                    if existing_symbol:
-                        # Use the existing symbol instead of adding a new one
-                        self.algorithm.Log(f"FuturesManager: Found existing symbol for {ticker}: {existing_symbol}")
-                        self.futures_symbols.append(existing_symbol)
+                    try:
+                        # Check if continuous contract already exists in algorithm
+                        continuous_symbol = f"/{ticker}"
+                        existing_symbol = None
                         
-                        # Initialize our custom tracking for existing symbol
-                        self.rollover_state[existing_symbol] = {
-                            'priority': priority,
-                            'ticker': ticker,
-                            'market': 'CME',
-                            'last_contract': None,
-                            'rollover_count': 0
-                        }
+                        for symbol in self.algorithm.Securities.Keys:
+                            if str(symbol) == continuous_symbol:
+                                existing_symbol = symbol
+                                break
                         
-                        found_existing_count += 1
-                    else:
-                        # Symbol doesn't exist, try to add it
-                        symbol_added = self._add_single_future_qc_native(symbol_config, priority)
-                        if symbol_added:
+                        if existing_symbol:
+                            # Symbol already added - validate it's properly configured
+                            security = self.algorithm.Securities[existing_symbol]
+                            if security.Type == SecurityType.Future:
+                                self.futures_symbols.append(existing_symbol)
+                                self._initialize_rollover_state(existing_symbol, symbol_config)
+                                found_existing_count += 1
+                                self.algorithm.Log(f"Found existing futures contract: {continuous_symbol}")
+                            else:
+                                self.algorithm.Error(f"Symbol {continuous_symbol} exists but is not a Future")
+                        else:
+                            # Need to add the futures contract
+                            self.algorithm.Log(f"Adding new futures contract: {ticker}")
+                            
+                            # Get futures configuration from centralized config manager
+                            try:
+                                execution_config = self.config_manager.get_execution_config()
+                                futures_params = execution_config.get('futures_config', {}).get('add_future_params', {})
+                                filter_params = execution_config.get('futures_config', {}).get('contract_filter', {})
+                            except Exception as config_error:
+                                self.algorithm.Error(f"CRITICAL: Failed to get futures configuration: {str(config_error)}")
+                                raise ValueError(f"Cannot add futures without valid configuration: {str(config_error)}")
+                            
+                            # Map string values to QuantConnect enums
+                            resolution = getattr(Resolution, futures_params.get('resolution', 'Daily'))
+                            data_mapping_mode = getattr(DataMappingMode, futures_params.get('data_mapping_mode', 'OpenInterest'))
+                            data_normalization_mode = getattr(DataNormalizationMode, futures_params.get('data_normalization_mode', 'BackwardsRatio'))
+                            
+                            # Use QC's native AddFuture method with configurable parameters
+                            future = self.algorithm.AddFuture(
+                                ticker=ticker,
+                                resolution=resolution,
+                                fillForward=futures_params.get('fill_forward', True),
+                                leverage=futures_params.get('leverage', 1.0),
+                                extendedMarketHours=futures_params.get('extended_market_hours', False),
+                                dataMappingMode=data_mapping_mode,
+                                dataNormalizationMode=data_normalization_mode,
+                                contractDepthOffset=futures_params.get('contract_depth_offset', 0)
+                            )
+                            
+                            # Set contract filter using configurable parameters
+                            min_days = filter_params.get('min_days_out', 0)
+                            max_days = filter_params.get('max_days_out', 182)
+                            future.SetFilter(timedelta(days=min_days), timedelta(days=max_days))
+                            
+                            # Track the symbol
+                            self.futures_symbols.append(future.Symbol)
+                            self._initialize_rollover_state(future.Symbol, symbol_config)
                             added_count += 1
+                            
+                    except Exception as e:
+                        error_msg = f"CRITICAL ERROR adding futures contract {ticker}: {str(e)}"
+                        self.algorithm.Error(error_msg)
+                        # Don't continue with partial configuration - this could lead to wrong trades
+                        raise ValueError(error_msg)
             
-            self.algorithm.Log(f"FuturesManager: Found {found_existing_count} existing symbols, added {added_count} new symbols")
-            self.algorithm.Log(f"FuturesManager: Total symbols managed: {len(self.futures_symbols)}")
+            # FINAL VALIDATION: Ensure we have the expected number of symbols
+            expected_count = total_configured_symbols
+            actual_count = len(self.futures_symbols)
+            
+            if actual_count != expected_count:
+                error_msg = (f"CRITICAL ERROR: Symbol count mismatch. "
+                           f"Expected {expected_count}, got {actual_count}. "
+                           f"This indicates configuration or setup failure.")
+                self.algorithm.Error(error_msg)
+                raise ValueError(error_msg)
+            
+            self.algorithm.Log(f"FuturesManager: Successfully configured {actual_count} futures contracts")
+            self.algorithm.Log(f"  - Added new: {added_count}")
+            self.algorithm.Log(f"  - Found existing: {found_existing_count}")
             
         except Exception as e:
-            self.algorithm.Error(f"FuturesManager: Error adding futures universe: {str(e)}")
+            error_msg = f"CRITICAL FAILURE in add_futures_universe: {str(e)}"
+            self.algorithm.Error(error_msg)
+            # Clear any partial state to prevent trading with wrong configuration
+            self.futures_symbols = []
+            self.rollover_state = {}
+            # Re-raise to stop algorithm execution
+            raise ValueError(error_msg)
     
     def _find_existing_symbol(self, ticker):
         """
@@ -251,6 +321,51 @@ class FuturesManager:
         except Exception as e:
             self.algorithm.Error(f"FuturesManager: Error finding existing symbol for {ticker}: {str(e)}")
             return None
+    
+    def _initialize_rollover_state(self, symbol, symbol_config):
+        """
+        Initialize rollover tracking state for a futures symbol.
+        This tracks our custom rollover logic separate from QC's built-in handling.
+        """
+        try:
+            # Extract symbol information
+            if isinstance(symbol_config, dict):
+                ticker = symbol_config.get('ticker', self._get_ticker_from_symbol(symbol))
+                priority = symbol_config.get('priority', 1)
+                market = symbol_config.get('market', 'CME')
+                category = symbol_config.get('category', 'unknown')
+            else:
+                # Fallback if symbol_config is just a string
+                ticker = str(symbol_config)
+                priority = 1
+                market = 'CME'
+                category = 'unknown'
+            
+            # Initialize rollover state tracking
+            self.rollover_state[symbol] = {
+                'priority': priority,
+                'ticker': ticker,
+                'market': market,
+                'category': category,
+                'last_contract': None,
+                'rollover_count': 0,
+                'initialized_time': self.algorithm.Time
+            }
+            
+            self.algorithm.Log(f"FuturesManager: Initialized rollover state for {ticker} (priority {priority})")
+            
+        except Exception as e:
+            self.algorithm.Error(f"FuturesManager: Error initializing rollover state for {symbol}: {str(e)}")
+            # Initialize with minimal state to prevent further errors
+            self.rollover_state[symbol] = {
+                'priority': 1,
+                'ticker': str(symbol),
+                'market': 'CME',
+                'category': 'unknown',
+                'last_contract': None,
+                'rollover_count': 0,
+                'initialized_time': self.algorithm.Time
+            }
     
     def _add_single_future_qc_native(self, symbol_config, priority):
         """

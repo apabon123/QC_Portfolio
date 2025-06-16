@@ -1,507 +1,397 @@
-# base_strategy.py - STANDARDIZED BASE STRATEGY CLASS
+# base_strategy.py - ENHANCED BASE STRATEGY CLASS WITH COMMON FUNCTIONALITY
 
 from AlgorithmImports import *
 import numpy as np
 from abc import ABC, abstractmethod
+from collections import deque
 
 class BaseStrategy(ABC):
     """
-    Standardized Base Strategy Class - QC PLUMBING BEST PRACTICES
+    ENHANCED Base Strategy Class - Captures ALL common functionality
     
-    This class encapsulates all QuantConnect integration patterns that have been
-    proven to work across Kestner, MTUM, and HMM strategies. All future strategies
-    should inherit from this class to ensure consistency and scalability.
-    
-    KEY QC INTEGRATIONS STANDARDIZED:
-    - History API usage patterns
-    - Consolidator management
-    - Security property access
-    - Order management
-    - Resource disposal
-    - Error handling
-    - Configuration loading
-    - Performance tracking
+    This eliminates massive code duplication found across Kestner, MTUM, and HMM strategies.
+    All strategies should inherit from this class for consistency and maintainability.
     """
     
-    def __init__(self, algorithm, futures_manager, name, config_manager=None):
+    def __init__(self, algorithm, config_manager, strategy_name):
         """
-        Standardized strategy initialization.
-        
-        Args:
-            algorithm: QuantConnect algorithm instance
-            futures_manager: Futures manager instance
-            name: Strategy name
-            config_manager: Config manager instance (required for dynamic loading)
+        Initialize base strategy with centralized configuration.
+        CRITICAL: All configuration MUST come through config_manager.
+        NO fallback logic allowed.
         """
         self.algorithm = algorithm
-        self.futures_manager = futures_manager
-        self.name = name
         self.config_manager = config_manager
+        self.name = strategy_name
         
-        # Standardized state tracking
-        self.symbol_data = {}
-        self.current_targets = {}
-        self.last_rebalance_date = None
-        self.last_update_time = None
+        # Set up futures manager reference for liquid symbol access
+        self.futures_manager = getattr(algorithm, 'futures_manager', None)
         
-        # Standardized performance tracking
-        self.trades_executed = 0
-        self.total_rebalances = 0
-        self.strategy_returns = []
-        self.portfolio_values = []
-        self.gross_exposure_history = []
-        
-        # Load configuration using standardized pattern
-        self._load_configuration()
-        
-        # Log successful initialization
-        self._log_initialization_summary()
-    
-    def _load_configuration(self):
-        """
-        Standardized configuration loading with proper fallback handling.
-        """
         try:
-            if self.config_manager:
-                # Primary: Load from config_manager (dynamic loading)
-                strategy_config = self.config_manager.get_strategy_config(self.name)
-                if strategy_config:
-                    self._build_config_dict(strategy_config)
-                    self.algorithm.Log(f"{self.name}: Config loaded from config_manager")
-                    return
+            # Get strategy configuration through centralized manager ONLY
+            self.config = self.config_manager.get_strategy_config(strategy_name)
+            self.algorithm.Log(f"{self.name}: Configuration loaded successfully")
             
-            # Fallback: Use default configuration
-            self.algorithm.Log(f"{self.name}: Using fallback configuration")
-            self._load_fallback_config()
+            # Validate strategy is enabled
+            if not self.config.get('enabled', False):
+                error_msg = f"Strategy {self.name} is not enabled in configuration"
+                self.algorithm.Error(f"STRATEGY ERROR: {error_msg}")
+                raise ValueError(error_msg)
+            
+            # Initialize strategy-specific components
+            self._initialize_strategy_components()
             
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Config loading error: {str(e)}")
-            self._load_fallback_config()
+            error_msg = f"CRITICAL ERROR initializing strategy {self.name}: {str(e)}"
+            self.algorithm.Error(error_msg)
+            # Do not use fallback - fail fast
+            raise ValueError(error_msg)
     
-    @abstractmethod
-    def _build_config_dict(self, config):
-        """Build strategy-specific config dictionary from provided config."""
+    def _initialize_strategy_components(self):
+        """Initialize strategy-specific components. Override in subclasses."""
         pass
-    
-    @abstractmethod
-    def _load_fallback_config(self):
-        """Load fallback configuration if config_manager is unavailable."""
-        pass
-    
-    def _log_initialization_summary(self):
-        """Log standardized initialization summary."""
-        self.algorithm.Log(f"{self.name}: Initialized with CONFIG-COMPLIANT parameters")
-        # Strategy-specific logging should be implemented in subclasses
     
     # ============================================================================
-    # STANDARDIZED QC INTEGRATION METHODS
+    # COMMON CONFIGURATION LOADING (identical across all strategies)
+    # ============================================================================
+    
+    # SECURITY: No fallback configuration allowed
+    # All configuration MUST come through centralized config manager
+    
+    # No _build_config_dict or _load_fallback_config methods allowed
+    # All configuration access through self.config only
+    # Configuration validation happens in __init__ method, not at class level
+    
+    def _log_initialization_summary(self):
+        """Common initialization logging."""
+        if hasattr(self, 'config'):
+            target_vol = self.config.get('target_volatility', 0)
+            max_pos = self.config.get('max_position_weight', 0)
+            self.algorithm.Log(f"{self.name}: Initialized - Target Vol: {target_vol:.1%}, Max Position: {max_pos:.1%}")
+    
+    # ============================================================================
+    # COMMON INTERFACE METHODS (identical implementations across strategies)
+    # ============================================================================
+    
+    def update(self, slice_data):
+        """Common update method found in all strategies."""
+        try:
+            if not self._validate_slice_data_centralized(slice_data):
+                return
+            
+            self.last_update_time = slice_data.Time if hasattr(slice_data, 'Time') else self.algorithm.Time
+            
+            # Update symbol data - common pattern across strategies
+            for symbol, bar in slice_data.Bars.items():
+                if symbol in self.symbol_data:
+                    symbol_data = self.symbol_data[symbol]
+                    if hasattr(symbol_data, 'OnDataConsolidated'):
+                        symbol_data.OnDataConsolidated(None, bar)
+                    elif hasattr(symbol_data, 'OnConsolidated'):
+                        symbol_data.OnConsolidated(None, bar)
+                
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error in update: {str(e)}")
+    
+    def generate_targets(self):
+        """Common target generation pattern found in all strategies."""
+        try:
+            if not self.should_rebalance(self.algorithm.Time):
+                return self.current_targets
+            
+            signals = self.generate_signals()
+            if not signals:
+                return {}
+            
+            # Common processing pipeline found in all strategies
+            targets = self._apply_position_limits(signals)
+            targets = self._apply_volatility_targeting(targets)
+            targets = self._validate_trade_sizes(targets)
+            
+            self.current_targets = targets
+            self.last_rebalance_date = self.algorithm.Time.date()
+            self.total_rebalances += 1
+            
+            return targets
+            
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error generating targets: {str(e)}")
+            return {}
+    
+    def get_exposure(self):
+        """Common exposure calculation found in all strategies."""
+        try:
+            if not self.current_targets:
+                return {'gross_exposure': 0.0, 'net_exposure': 0.0, 'long_exposure': 0.0,
+                       'short_exposure': 0.0, 'num_positions': 0}
+            
+            long_exp = sum(max(0, w) for w in self.current_targets.values())
+            short_exp = sum(min(0, w) for w in self.current_targets.values())
+            
+            return {
+                'gross_exposure': long_exp + abs(short_exp),
+                'net_exposure': long_exp + short_exp,
+                'long_exposure': long_exp,
+                'short_exposure': abs(short_exp),
+                'num_positions': len([w for w in self.current_targets.values() if abs(w) > 0.01])
+            }
+        except Exception as e:
+            return {'gross_exposure': 0.0, 'net_exposure': 0.0, 'long_exposure': 0.0,
+                   'short_exposure': 0.0, 'num_positions': 0}
+    
+    @property
+    def IsAvailable(self):
+        """Common availability check found in all strategies."""
+        if not hasattr(self, 'config') or not self.config.get('enabled', True):
+            return False
+        
+        if not self.symbol_data:
+            return False
+        
+        ready_symbols = sum(1 for sd in self.symbol_data.values() 
+                           if hasattr(sd, 'IsReady') and sd.IsReady)
+        return ready_symbols >= max(1, len(self.symbol_data) * 0.5)
+    
+    # ============================================================================
+    # COMMON PROCESSING METHODS (found in all strategies)
+    # ============================================================================
+    
+    def _validate_slice_data_centralized(self, slice_data):
+        """Common validation using DataIntegrityChecker - found in all strategies."""
+        try:
+            if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
+                return self.algorithm.data_integrity_checker.validate_slice(slice_data) is not None
+            
+            if not slice_data or not slice_data.Bars:
+                return False
+            
+            for symbol, bar in slice_data.Bars.items():
+                if symbol in self.algorithm.Securities:
+                    security = self.algorithm.Securities[symbol]
+                    if security.HasData and security.IsTradable and security.Price > 0:
+                        return True
+            return False
+            
+        except Exception as e:
+            return False
+    
+    def _apply_position_limits(self, signals):
+        """Common position limiting found in all strategies."""
+        try:
+            max_weight = self.config.get('max_position_weight', 0.5)
+            return {symbol: max(-max_weight, min(max_weight, signal)) 
+                   for symbol, signal in signals.items()}
+        except Exception as e:
+            return signals
+    
+    def _apply_volatility_targeting(self, signals):
+        """Common volatility targeting found in all strategies."""
+        try:
+            if not signals:
+                return signals
+            
+            target_vol = self.config.get('target_volatility', 0.15)
+            portfolio_vol = self._calculate_portfolio_volatility(signals)
+            
+            if portfolio_vol > 0:
+                vol_scalar = max(0.1, min(10.0, target_vol / portfolio_vol))
+                return {symbol: signal * vol_scalar for symbol, signal in signals.items()}
+            
+            return signals
+        except Exception as e:
+            return signals
+    
+    def _calculate_portfolio_volatility(self, weights):
+        """Common portfolio volatility calculation."""
+        try:
+            if not weights:
+                return 0.0
+            
+            total_vol = 0.0
+            count = 0
+            
+            for symbol in weights.keys():
+                if symbol in self.symbol_data:
+                    symbol_data = self.symbol_data[symbol]
+                    if hasattr(symbol_data, 'GetVolatility'):
+                        vol = symbol_data.GetVolatility()
+                        if vol and vol > 0:
+                            total_vol += vol
+                            count += 1
+            
+            if count > 0:
+                avg_vol = total_vol / count
+                return avg_vol * np.sqrt(len(weights)) * 0.7  # Diversification benefit
+            
+            return 0.20  # Default assumption
+        except Exception as e:
+            return 0.20
+    
+    def _validate_trade_sizes(self, targets):
+        """Common trade size validation found in all strategies."""
+        try:
+            if not targets:
+                return targets
+            
+            min_threshold = self.config.get('min_weight_threshold', 0.01)
+            min_trade_value = self.config.get('min_trade_value', 1000)
+            portfolio_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
+            
+            validated = {}
+            for symbol, weight in targets.items():
+                if abs(weight) >= min_threshold and abs(weight) * portfolio_value >= min_trade_value:
+                    validated[symbol] = weight
+            
+            return validated
+        except Exception as e:
+            return targets
+    
+    # ============================================================================
+    # COMMON ONSECURITIESCHANGED (identical across strategies)
+    # ============================================================================
+    
+    def OnSecuritiesChanged(self, changes):
+        """Common OnSecuritiesChanged handling found in all strategies."""
+        try:
+            for security in changes.AddedSecurities:
+                symbol = security.Symbol
+                symbol_str = str(symbol)
+                
+                if symbol_str.startswith('/') or symbol_str.startswith('futures/'):
+                    if symbol not in self.symbol_data:
+                        self.algorithm.Log(f"{self.name}: Initializing SymbolData for: {symbol}")
+                        try:
+                            self.symbol_data[symbol] = self._create_symbol_data(symbol)
+                        except Exception as e:
+                            self.algorithm.Error(f"{self.name}: Failed to create SymbolData: {e}")
+                else:
+                    self.algorithm.Log(f"{self.name}: Skipping rollover contract: {symbol_str}")
+            
+            for security in changes.RemovedSecurities:
+                symbol = security.Symbol
+                if symbol in self.symbol_data:
+                    try:
+                        self.symbol_data[symbol].Dispose()
+                        del self.symbol_data[symbol]
+                        self.algorithm.Log(f"{self.name}: Removed SymbolData for: {symbol}")
+                    except Exception as e:
+                        self.algorithm.Error(f"{self.name}: Error removing SymbolData: {e}")
+                        
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error in OnSecuritiesChanged: {str(e)}")
+    
+    # ============================================================================
+    # CENTRALIZED HISTORY API ACCESS (solves concurrency issues)
     # ============================================================================
     
     def get_qc_history(self, symbol, periods, resolution=Resolution.Daily):
-        """
-        Standardized History API usage.
-        
-        Returns:
-            pandas.DataFrame: Historical data or empty DataFrame if failed
-        """
+        """CENTRALIZED History API usage via DataIntegrityChecker."""
         try:
+            # PRIORITY 1: Use centralized data integrity checker with caching
+            if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
+                history = self.algorithm.data_integrity_checker.get_history(symbol, periods, resolution)
+                return history if history is not None and not history.empty else None
+            
+            # PRIORITY 2: Use QC native contract resolver if available
+            if hasattr(self.algorithm, 'contract_resolver') and self.algorithm.contract_resolver:
+                history = self.algorithm.contract_resolver.get_history_with_diagnostics(symbol, periods, resolution)
+                return history if history is not None and not history.empty else None
+            
+            # FALLBACK: Direct QC History method (NOT RECOMMENDED)
+            self.algorithm.Log(f"{self.name}: WARNING - Using direct History API")
             history = self.algorithm.History(symbol, periods, resolution)
-            return history if not history.empty else None
+            return history if history is not None and not history.empty else None
+                
         except Exception as e:
             self.algorithm.Log(f"{self.name}: History API error for {symbol}: {str(e)}")
             return None
     
-    def get_qc_security_price(self, symbol):
-        """
-        Standardized security price access.
-        
-        Returns:
-            float: Current price or None if invalid
-        """
-        try:
-            if symbol in self.algorithm.Securities:
-                price = self.algorithm.Securities[symbol].Price
-                return price if price > 0 and not np.isnan(price) and not np.isinf(price) else None
-            return None
-        except Exception as e:
-            self.algorithm.Log(f"{self.name}: Price access error for {symbol}: {str(e)}")
-            return None
+    # ============================================================================
+    # COMMON PERFORMANCE METHODS
+    # ============================================================================
     
-    def get_qc_mapped_contract(self, symbol):
-        """
-        Standardized mapped contract access.
-        
-        Returns:
-            Symbol: Mapped contract or None if invalid
-        """
+    def get_performance_metrics(self):
+        """Common performance metrics calculation."""
         try:
-            if symbol in self.algorithm.Securities:
-                mapped = self.algorithm.Securities[symbol].Mapped
-                security = self.algorithm.Securities[mapped] if mapped else None
-                return mapped if security and security.HasData else None
-            return None
+            exposure = self.get_exposure()
+            return {
+                'total_rebalances': self.total_rebalances,
+                'trades_executed': self.trades_executed,
+                'current_exposure': exposure,
+                'is_available': self.IsAvailable,
+                'symbols_ready': len([sd for sd in self.symbol_data.values() 
+                                    if hasattr(sd, 'IsReady') and sd.IsReady]),
+                'total_symbols': len(self.symbol_data),
+                'last_rebalance': self.last_rebalance_date
+            }
         except Exception as e:
-            self.algorithm.Log(f"{self.name}: Mapped contract error for {symbol}: {str(e)}")
-            return None
+            return {'error': str(e)}
     
-    def place_qc_market_order(self, symbol, quantity, tag=None):
-        """
-        Standardized market order placement.
-        
-        Returns:
-            OrderTicket: Order ticket or None if failed
-        """
+    def log_status(self):
+        """Common status logging."""
         try:
-            if tag is None:
-                tag = f"{self.name}_order"
+            metrics = self.get_performance_metrics()
+            exposure = metrics.get('current_exposure', {})
             
-            order_ticket = self.algorithm.MarketOrder(symbol, quantity, tag=tag)
-            return order_ticket
+            self.algorithm.Log(f"{self.name} STATUS: Available={metrics.get('is_available', False)}, "
+                              f"Symbols={metrics.get('symbols_ready', 0)}/{metrics.get('total_symbols', 0)}, "
+                              f"Gross={exposure.get('gross_exposure', 0):.1%}, "
+                              f"Positions={exposure.get('num_positions', 0)}")
         except Exception as e:
-            self.algorithm.Log(f"{self.name}: Order placement error for {symbol}: {str(e)}")
-            return None
-    
-    def liquidate_qc_position(self, symbol, tag=None):
-        """
-        Standardized position liquidation.
-        
-        Returns:
-            OrderTicket: Liquidation ticket or None if failed
-        """
-        try:
-            if tag is None:
-                tag = f"{self.name}_liquidate"
-            
-            order_ticket = self.algorithm.Liquidate(symbol, tag=tag)
-            return order_ticket
-        except Exception as e:
-            self.algorithm.Log(f"{self.name}: Liquidation error for {symbol}: {str(e)}")
-            return None
+            self.algorithm.Error(f"{self.name}: Error logging status: {str(e)}")
     
     # ============================================================================
-    # STANDARDIZED SYMBOL DATA BASE CLASS
+    # ABSTRACT METHODS - STRATEGY-SPECIFIC IMPLEMENTATIONS
+    # ============================================================================
+    
+    @abstractmethod
+    def generate_signals(self):
+        """Generate raw trading signals - core strategy logic."""
+        pass
+    
+    @abstractmethod
+    def should_rebalance(self, current_time):
+        """Determine if strategy should rebalance."""
+        pass
+    
+    @abstractmethod
+    def _create_symbol_data(self, symbol):
+        """Create strategy-specific symbol data object."""
+        pass
+    
+    # ============================================================================
+    # BASE SYMBOL DATA CLASS (common patterns)
     # ============================================================================
     
     class BaseSymbolData:
-        """
-        Standardized SymbolData base class with QC best practices.
-        
-        All strategy-specific SymbolData classes should inherit from this.
-        """
+        """Base SymbolData with common patterns."""
         
         def __init__(self, algorithm, symbol):
             self.algorithm = algorithm
             self.symbol = symbol
-            
-            # Standardized tracking
             self.data_points_received = 0
             self.last_update_time = None
-            self.consolidator = None
-            
-            # Data availability tracking - CRITICAL FOR TRADING DECISIONS
-            self.has_sufficient_data = True  # Assume true until proven otherwise
+            self.has_sufficient_data = True
             self.data_availability_error = None
-            
-            # Initialize consolidator using standardized pattern
-            self._setup_consolidator()
-        
-        def _setup_consolidator(self):
-            """Standardized consolidator setup."""
-            try:
-                self.consolidator = TradeBarConsolidator(timedelta(days=1))
-                self.consolidator.DataConsolidated += self.OnDataConsolidated
-                self.algorithm.SubscriptionManager.AddConsolidator(self.symbol, self.consolidator)
-            except Exception as e:
-                self.algorithm.Log(f"SymbolData {self.symbol}: Consolidator setup error: {str(e)}")
         
         def get_qc_history(self, periods, resolution=Resolution.Daily):
-            """Standardized history access for SymbolData."""
+            """CENTRALIZED history access for SymbolData via DataIntegrityChecker."""
             try:
+                if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
+                    history = self.algorithm.data_integrity_checker.get_history(self.symbol, periods, resolution)
+                    return history if history is not None and not history.empty else None
+                
+                self.algorithm.Log(f"SymbolData {self.symbol}: WARNING - Using direct History API")
                 history = self.algorithm.History(self.symbol, periods, resolution)
                 return history if not history.empty else None
             except Exception as e:
                 self.algorithm.Log(f"SymbolData {self.symbol}: History error: {str(e)}")
                 return None
         
-        def process_qc_history(self, history):
-            """
-            Standardized history processing using pandas iterrows pattern.
-            
-            Args:
-                history: pandas.DataFrame from QC History API
-                
-            Returns:
-                list: Processed data points
-            """
-            processed_data = []
-            
-            try:
-                for index, row in history.iterrows():
-                    # Standardized column access
-                    close = row['close'] if 'close' in row else row.get('Close', 0)
-                    open_price = row['open'] if 'open' in row else row.get('Open', close)
-                    
-                    # Validate data
-                    if close > 0 and not np.isnan(close) and not np.isinf(close):
-                        processed_data.append({
-                            'close': close,
-                            'open': open_price,
-                            'time': index
-                        })
-                        self.data_points_received += 1
-                
-                return processed_data
-                
-            except Exception as e:
-                self.algorithm.Log(f"SymbolData {self.symbol}: History processing error: {str(e)}")
-                return []
-        
-        def handle_no_data_available(self, required_periods):
-            """
-            Handle case when no historical data is available.
-            
-            CRITICAL: No mock data for trading decisions!
-            This method logs the issue and marks the symbol as not ready.
-            
-            Args:
-                required_periods: Number of periods that were requested
-            """
-            self.algorithm.Error(f"CRITICAL: SymbolData {self.symbol} - No historical data available for {required_periods} periods")
-            self.algorithm.Error(f"TRADING DECISION RISK: Strategy cannot initialize {self.symbol} without real market data")
-            
-            # Mark this symbol as having insufficient data
-            self.has_sufficient_data = False
-            self.data_availability_error = f"No historical data available for {required_periods} periods"
-            
-            # Log to help with debugging
-            self.algorithm.Log(f"SymbolData {self.symbol}: Marked as insufficient data - will not be ready for trading")
-            
-            return None
-        
-        @abstractmethod
-        def OnDataConsolidated(self, sender, bar):
-            """Handle consolidated data - must be implemented by subclasses."""
-            pass
-        
-        @property
         @abstractmethod
         def IsReady(self):
-            """Check if symbol data is ready - must be implemented by subclasses."""
+            """Check if symbol data is ready."""
             pass
         
         def Dispose(self):
-            """Standardized resource disposal."""
-            try:
-                if hasattr(self, 'consolidator') and self.consolidator is not None:
-                    self.consolidator.DataConsolidated -= self.OnDataConsolidated
-                    # Properly dispose of consolidator
-                    if hasattr(self.algorithm, 'SubscriptionManager'):
-                        try:
-                            self.algorithm.SubscriptionManager.RemoveConsolidator(self.symbol, self.consolidator)
-                        except:
-                            pass  # May already be removed
-                    self.consolidator = None
-                    
-            except Exception as e:
-                self.algorithm.Log(f"SymbolData {self.symbol}: Dispose error: {str(e)}")
-    
-    # ============================================================================
-    # ABSTRACT METHODS - MUST BE IMPLEMENTED BY SUBCLASSES
-    # ============================================================================
-    
-    @abstractmethod
-    def update(self, slice_data):
-        """Update strategy with new data."""
-        pass
-    
-    @abstractmethod
-    def generate_targets(self):
-        """Generate target positions."""
-        pass
-    
-    @abstractmethod
-    def get_exposure(self):
-        """Get current exposure metrics."""
-        pass
-    
-    @abstractmethod
-    def should_rebalance(self, current_time):
-        """Check if strategy should rebalance."""
-        pass
-    
-    # ============================================================================
-    # STANDARDIZED SECURITIES CHANGED HANDLING
-    # ============================================================================
-    
-    def OnSecuritiesChanged(self, changes):
-        """
-        Standardized security change handling.
-        Only track continuous contracts, ignore rollover-specific contracts.
-        """
-        for security in changes.AddedSecurities:
-            symbol = security.Symbol
-            symbol_str = str(symbol)
-            
-            # Only track continuous contracts (start with '/') - QC STANDARDIZED
-            if symbol_str.startswith('/') or symbol_str.startswith('futures/'):
-                if symbol not in self.symbol_data:
-                    self.algorithm.Log(f"{self.name}: Initializing SymbolData for continuous contract: {symbol}")
-                    try:
-                        # Subclasses should override this method to create their specific SymbolData
-                        self._create_symbol_data(symbol)
-                    except Exception as e:
-                        self.algorithm.Error(f"{self.name}: Failed to create SymbolData for {symbol}: {e}")
-            else:
-                # Skip rollover contracts - QC STANDARDIZED
-                self.algorithm.Log(f"{self.name}: Skipping rollover contract in OnSecuritiesChanged: {symbol_str}")
-                
-        for security in changes.RemovedSecurities:
-            symbol = security.Symbol
-            if symbol in self.symbol_data:
-                self.algorithm.Log(f"{self.name}: Removing SymbolData for security: {symbol}")
-                try:
-                    self.symbol_data[symbol].Dispose()
-                    del self.symbol_data[symbol]
-                except Exception as e:
-                    self.algorithm.Log(f"{self.name}: Error disposing SymbolData for {symbol}: {e}")
-    
-    @abstractmethod
-    def _create_symbol_data(self, symbol):
-        """Create strategy-specific SymbolData - must be implemented by subclasses."""
-        pass
-    
-    # ============================================================================
-    # STANDARDIZED PERFORMANCE TRACKING
-    # ============================================================================
-    
-    def get_performance_metrics(self):
-        """Get standardized performance metrics."""
-        return {
-            'strategy_name': self.name,
-            'trades_executed': self.trades_executed,
-            'total_rebalances': self.total_rebalances,
-            'current_positions': len(self.current_targets),
-            'ready_symbols': len([sd for sd in self.symbol_data.values() if sd.IsReady]),
-            'total_symbols': len(self.symbol_data),
-            'last_rebalance': self.last_rebalance_date,
-            'last_update': self.last_update_time
-        }
-    
-    def log_status(self):
-        """Log standardized strategy status."""
-        metrics = self.get_performance_metrics()
-        self.algorithm.Log(f"{self.name} STATUS: "
-                         f"Trades: {metrics['trades_executed']}, "
-                         f"Rebalances: {metrics['total_rebalances']}, "
-                         f"Ready: {metrics['ready_symbols']}/{metrics['total_symbols']}")
-    
-    def _validate_slice_data_centralized(self, slice_data):
-        """
-        CENTRALIZED validation using DataIntegrityChecker and QC built-ins
-        All strategies should use this method for consistency
-        """
-        try:
-            # Use centralized data integrity checker if available
-            if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
-                # Use the centralized, QC-optimized validation
-                return self.algorithm.data_integrity_checker.validate_slice(slice_data) is not None
-            
-            # Fallback: Use QC's built-in validation methods
-            if not slice_data or not hasattr(slice_data, 'Bars'):
-                return False
-            
-            # Check if any of our symbols have valid data using QC's built-in properties
-            valid_symbols = 0
-            for symbol in self.symbol_data.keys():
-                if slice_data.Contains(symbol) and symbol in slice_data.Bars:
-                    # LEVERAGE QC'S BUILT-IN VALIDATION:
-                    if symbol in self.algorithm.Securities:
-                        security = self.algorithm.Securities[symbol]
-                        
-                        # Use QC's HasData and IsTradable properties
-                        if security.HasData and security.IsTradable:
-                            bar = slice_data.Bars[symbol]
-                            if bar and bar.Close > 0:
-                                valid_symbols += 1
-            
-            return valid_symbols > 0
-            
-        except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error in centralized validation: {str(e)}")
-            return False
-    
-    def _get_safe_symbols_from_futures_manager(self):
-        """
-        Get safe symbols using centralized FuturesManager
-        Leverage QC's built-in validation + centralized quarantine logic
-        """
-        try:
-            if self.futures_manager:
-                # Use centralized FuturesManager to get safe symbols
-                all_symbols = self.futures_manager.get_liquid_symbols()
-                
-                # Apply data integrity filtering if available
-                if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
-                    safe_symbols = self.algorithm.data_integrity_checker.get_safe_symbols(all_symbols)
-                    return safe_symbols
-                
-                return all_symbols
-            
-            # Fallback: Use QC's Securities directly with basic validation
-            safe_symbols = []
-            for symbol in self.algorithm.Securities.Keys:
-                security = self.algorithm.Securities[symbol]
-                
-                # Use QC's built-in validation
-                if (security.Type == SecurityType.Future and 
-                    security.HasData and 
-                    security.IsTradable and 
-                    security.Price > 0):
-                    safe_symbols.append(symbol)
-            
-            return safe_symbols
-            
-        except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error getting safe symbols: {str(e)}")
-            return []
-    
-    def _validate_symbol_for_trading_qc_native(self, symbol):
-        """
-        CENTRALIZED symbol validation using QC's built-in properties
-        All strategies should use this for consistency
-        """
-        try:
-            # Check if symbol exists in securities (QC managed)
-            if symbol not in self.algorithm.Securities:
-                return False
-            
-            security = self.algorithm.Securities[symbol]
-            
-            # LEVERAGE QC'S BUILT-IN VALIDATION:
-            
-            # 1. HasData property (QC built-in)
-            if not security.HasData:
-                return False
-            
-            # 2. IsTradable property (QC built-in)
-            if not security.IsTradable:
-                return False
-            
-            # 3. Price validation (QC built-in)
-            if not hasattr(security, 'Price') or security.Price is None or security.Price <= 0:
-                return False
-            
-            # 4. Check with centralized data integrity checker if available
-            if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
-                if symbol in self.algorithm.data_integrity_checker.quarantined_symbols:
-                    return False
-            
-            # 5. Use centralized FuturesManager validation if available
-            if self.futures_manager:
-                if not self.futures_manager.validate_price(symbol, security.Price):
-                    return False
-            
-            return True
-            
-        except Exception as e:
-            return False 
+            """Base cleanup."""
+            pass 

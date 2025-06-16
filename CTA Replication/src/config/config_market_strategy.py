@@ -85,7 +85,7 @@ STRATEGY_CONFIGS = {
         'target_volatility': 0.2,              # 20% individual strategy vol target
         'rebalance_frequency': 'weekly',        # Weekly rebalancing on Fridays
         'max_position_weight': 0.6,             # 60% maximum single position
-        'warmup_days': 400,                     # Strategy-specific warmup
+        'warmup_days': 400,                     # Strategy-specific warmup (based on max lookback of 52 weeks + buffer)
         'expected_sharpe': 0.8,                 # Historical Sharpe expectation
         'correlation_with_trend': 0.75,         # Expected correlation with SG Trend Index
     },
@@ -108,7 +108,7 @@ STRATEGY_CONFIGS = {
         'max_position_weight': 0.6,             # 60% maximum single position
         'risk_free_rate': 0.02,                 # 2% annual risk-free rate assumption
         'long_short_enabled': True,             # Allow short positions (vs equity MTUM)
-        'warmup_days': 252 * 3,                 # Strategy-specific warmup
+        'warmup_days': 252 * 3,                 # Strategy-specific warmup (3 years for volatility estimation)
         'expected_sharpe': 0.6,                 # Conservative Sharpe expectation
         'correlation_with_momentum': 0.7,       # Expected momentum factor correlation
     },
@@ -213,6 +213,13 @@ RISK_CONFIG = {
 # UNIVERSE CONFIGURATION (MARKET-SPECIFIC)
 # =============================================================================
 UNIVERSE_CONFIG = {
+    # Universe Loading Configuration
+    'loading': {
+        'max_priority': 2,                      # Only load priority 1 and 2 symbols by default
+        'include_expansion_candidates': True,   # Include expansion candidates in loading
+        'priority_override': None,              # Set to specific priority to load only that priority
+    },
+    
     # Futures Universe (simplified - QC provides contract specs automatically)
     'futures': {
         'equity_index': {

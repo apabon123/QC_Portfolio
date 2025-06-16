@@ -32,7 +32,6 @@ try:
     from universe import FuturesManager
     
     # Import utilities
-    from fallback_implementations import FallbackComponents
     from universe_helpers import UniverseHelpers
     from futures_helpers import FuturesHelpers
     
@@ -66,7 +65,8 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             # Check if imports were successful
             if not IMPORTS_SUCCESSFUL:
                 self.Error(f"CRITICAL: Module imports failed: {IMPORT_ERROR}")
-                self.Error("Attempting emergency fallback initialization...")
+                self.Error("SECURITY POLICY: No fallback trading configurations allowed")
+                self.Error("Initializing crash-prevention mode (NO TRADING)")
                 self._emergency_fallback_initialization()
                 return
             
@@ -87,45 +87,42 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self.config_manager = AlgorithmConfigManager(self)
                 self.config = self.config_manager.load_and_validate_config(variant="full")
                 self.Log("SUCCESS: Configuration manager initialized")
+                
+                # CRITICAL: Validate complete configuration before proceeding
+                self.Log("Step 2.1: Validating complete configuration...")
+                self.config_manager.validate_complete_configuration()
+                self.Log("SUCCESS: Complete configuration validated")
+                
+                # CRITICAL: Generate and log configuration audit report
+                self.Log("Step 2.2: Generating configuration audit report...")
+                audit_report = self.config_manager.get_config_audit_report()
+                
+                # Log the audit report (split into chunks to avoid QC log limits)
+                report_lines = audit_report.split('\n')
+                for i in range(0, len(report_lines), 10):  # Log 10 lines at a time
+                    chunk = '\n'.join(report_lines[i:i+10])
+                    self.Log(chunk)
+                
+                self.Log("SUCCESS: Configuration audit report generated")
+                
             except Exception as e:
-                self.Log(f"Using fallback configuration: {str(e)}")
-                # Inline fallback configuration
-                self.config = {
-                    'algorithm': {'start_date': {'year': 2015, 'month': 1, 'day': 1}, 'end_date': {'year': 2020, 'month': 1, 'day': 1}, 'initial_cash': 10000000},
-                    'strategies': {'KestnerCTA': {'enabled': True, 'name': 'KestnerCTA'}},
-                    'universe': {
-                        'futures': {
-                            'ES': {'name': 'E-mini S&P 500', 'priority': 1, 'category': 'equity_index'},
-                            'NQ': {'name': 'E-mini NASDAQ 100', 'priority': 1, 'category': 'equity_index'},
-                            'ZN': {'name': '10-Year Treasury Note', 'priority': 1, 'category': 'bond'}
-                        },
-                        'expansion_candidates': {}
-                    },
-                    'execution': {
-                        'rollover_config': {'enabled': True},
-                        'min_trade_value': 1000,
-                        'min_weight_change': 0.01,
-                        'max_single_order_value': 50000000
-                    },
-                    'portfolio_risk': {
-                        'max_single_position': 10.0,
-                        'daily_stop_loss': 0.2,
-                        'target_portfolio_vol': 0.6
-                    },
-                    'constraints': {
-                        'min_capital': 5000000,
-                        'initial_capital': 10000000,
-                        'max_total_positions': 50
-                    },
-                    'system': {'name': 'Three-Layer CTA System', 'version': '1.0.0', 'description': 'QuantConnect Three-Layer CTA Portfolio System (Inline Fallback)', 'last_updated': '2024-01-01'}
-                }
+                # CRITICAL: Do not use fallback configuration for trading
+                error_msg = f"CRITICAL CONFIGURATION FAILURE: {str(e)}"
+                self.Error(error_msg)
+                self.Error("SECURITY POLICY: No fallback trading configurations allowed")
+                self.Error("STOPPING ALGORITHM: Cannot trade with invalid configuration")
                 
-                class InlineConfigManager:
-                    def __init__(self, config): self.config = config
-                    def get_config(self): return self.config
-                    def get_enabled_strategies(self): return {name: config for name, config in self.config['strategies'].items() if config.get('enabled', False)}
+                # Log the specific configuration issue for debugging
+                self.Error("Configuration loading failed. This could be due to:")
+                self.Error("1. Missing or corrupted configuration files")
+                self.Error("2. Invalid configuration structure")
+                self.Error("3. Import path issues in QuantConnect cloud")
+                self.Error("4. Configuration validation failures")
                 
-                self.config_manager = InlineConfigManager(self.config)
+                # SECURITY: Emergency fallback only prevents crashes - does not trade
+                self.Error("Initializing crash-prevention mode (NO TRADING)")
+                self._emergency_fallback_initialization()
+                return
             
             # Step 2.5: Initialize QuantConnect Native Features
             self.Log("Step 2.5: Initializing QuantConnect native features...")
@@ -282,131 +279,93 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             self.Error(f"Failed to schedule rebalancing: {str(e)}")
     
     def _emergency_fallback_initialization(self):
-        """Emergency fallback if main initialization fails."""
-        self.Log("EMERGENCY FALLBACK: Initializing minimal system...")
+        """
+        SECURITY-COMPLIANT Emergency fallback - NO TRADING CONFIGURATION FALLBACKS
+        Only initializes tracking variables and minimal component stubs to prevent crashes.
+        DOES NOT create fallback trading parameters - algorithm will not trade.
+        """
+        self.Log("EMERGENCY FALLBACK: Initializing crash-prevention system only...")
+        self.Error("CRITICAL: Configuration failed - Algorithm will NOT trade")
+        self.Error("SECURITY: No fallback trading parameters will be used")
         
         try:
-            # Create inline minimal configuration
-            self.config = {
-                'algorithm': {
-                    'start_date': {'year': 2015, 'month': 1, 'day': 1},
-                    'end_date': {'year': 2020, 'month': 1, 'day': 1},
-                    'initial_cash': 10000000,
-                    'warmup_period_days': 80
-                },
-                'strategies': {
-                    'KestnerCTA': {
-                        'enabled': True,
-                        'name': 'KestnerCTA',
-                        'momentum_lookbacks': [16, 32, 52],
-                        'volatility_lookback_days': 63,
-                        'target_volatility': 0.2,
-                        'rebalance_frequency': 'weekly',
-                        'max_position_weight': 0.6
-                    }
-                },
-                'universe': {
-                    'futures': {
-                        'ES': {'name': 'E-mini S&P 500', 'priority': 1, 'category': 'equity_index'},
-                        'NQ': {'name': 'E-mini NASDAQ 100', 'priority': 1, 'category': 'equity_index'},
-                        'ZN': {'name': '10-Year Treasury Note', 'priority': 1, 'category': 'bond'}
-                    },
-                    'expansion_candidates': {}
-                },
-                'execution': {
-                    'rollover_config': {
-                        'enabled': True,
-                        'order_type': 'market',
-                        'retry_attempts': 3,
-                        'log_rollover_events': True
-                    },
-                    'min_trade_value': 1000,
-                    'min_weight_change': 0.01,
-                    'max_single_order_value': 50000000
-                },
-                'portfolio_risk': {
-                    'max_single_position': 10.0,
-                    'daily_stop_loss': 0.2,
-                    'target_portfolio_vol': 0.6
-                },
-                'constraints': {
-                    'min_capital': 5000000,
-                    'initial_capital': 10000000,
-                    'max_total_positions': 50
-                },
-                'system': {
-                    'name': 'Three-Layer CTA System',
-                    'version': '1.0.0',
-                    'description': 'QuantConnect Three-Layer CTA Portfolio System (Emergency Fallback)',
-                    'last_updated': '2024-01-01'
-                }
-            }
+            # Initialize tracking variables ONLY (critical for OnData to not crash)
+            self._warmup_completed = False
+            self._first_rebalance_attempted = False
+            self._rollover_events_count = 0
+            self._algorithm_start_time = self.Time
             
-            # Create minimal config manager
-            class MinimalConfigManager:
-                def __init__(self, config):
-                    self.config = config
-                
-                def get_config(self):
-                    return self.config
-                
-                def get_enabled_strategies(self):
-                    return {name: config for name, config in self.config['strategies'].items() 
-                            if config.get('enabled', False)}
+            # Initialize empty containers to prevent AttributeError crashes
+            self.futures_symbols = []
+            self.config = None  # Explicitly set to None - no fallback config
+            self.config_manager = None  # Explicitly set to None - no fallback config manager
             
-            self.config_manager = MinimalConfigManager(self.config)
-            
-            # Set basic QuantConnect parameters
-            self.SetStartDate(2015, 1, 1)
-            self.SetEndDate(2020, 1, 1)
-            self.SetCash(10000000)
-            self.SetWarmup(80)
-            
-            # Try to add at least one future
-            try:
-                future = self.AddFuture('ES')
-                future.SetFilter(0, 182)
-                self.futures_symbols = [future.Symbol]
-                self.Log("Emergency fallback: Added ES future")
-            except Exception as e:
-                self.Error(f"Failed to add ES future: {str(e)}")
-                self.futures_symbols = []
-            
-            # Create minimal orchestrator stub
-            class MinimalOrchestrator:
+            # Create minimal component stubs ONLY to prevent crashes (no trading functionality)
+            class CrashPreventionOrchestrator:
+                """Minimal stub to prevent crashes - does not trade"""
                 def __init__(self, algorithm):
                     self.algorithm = algorithm
                 
                 def OnSecuritiesChanged(self, changes):
-                    pass
+                    self.algorithm.Log("CrashPreventionOrchestrator: OnSecuritiesChanged called (no action)")
                 
                 def update_with_data(self, slice):
-                    pass
+                    self.algorithm.Log("CrashPreventionOrchestrator: update_with_data called (no action)")
                 
                 def update_during_warmup(self, slice):
-                    pass
+                    self.algorithm.Log("CrashPreventionOrchestrator: update_during_warmup called (no action)")
+                
+                def generate_portfolio_targets(self):
+                    self.algorithm.Log("CrashPreventionOrchestrator: No targets generated (no configuration)")
+                    return {'status': 'failed', 'reason': 'No valid configuration available'}
             
-            self.orchestrator = MinimalOrchestrator(self)
+            class CrashPreventionExecutionManager:
+                """Minimal stub to prevent crashes - does not execute trades"""
+                def __init__(self, algorithm):
+                    self.algorithm = algorithm
+                
+                def execute_rebalance_result(self, result):
+                    self.algorithm.Log("CrashPreventionExecutionManager: No trades executed (no configuration)")
+                    return {'status': 'failed', 'reason': 'No valid configuration available'}
             
-            # Schedule basic rebalancing
-            self.Schedule.On(
-                self.DateRules.WeekEnd(), 
-                self.TimeRules.At(16, 0), 
-                self.WeeklyRebalance
-            )
+            class CrashPreventionSystemReporter:
+                """Minimal stub to prevent crashes - basic logging only"""
+                def __init__(self, algorithm):
+                    self.algorithm = algorithm
+                
+                def track_rebalance_performance(self, result):
+                    self.algorithm.Log("CrashPreventionSystemReporter: No performance tracking (no configuration)")
+                
+                def generate_monthly_performance_report(self):
+                    self.algorithm.Log("CrashPreventionSystemReporter: No monthly report (no configuration)")
+                
+                def generate_final_algorithm_report(self):
+                    self.algorithm.Log("CrashPreventionSystemReporter: Algorithm ended without valid configuration")
+                    self.algorithm.Log("SECURITY: No trading occurred due to configuration failure")
             
-            self.Log("Emergency fallback initialization complete")
+            # Initialize crash prevention components
+            self.orchestrator = CrashPreventionOrchestrator(self)
+            self.execution_manager = CrashPreventionExecutionManager(self)
+            self.system_reporter = CrashPreventionSystemReporter(self)
+            
+            # Set minimal QC parameters to prevent QC framework errors
+            # These are NOT trading parameters - just framework requirements
+            try:
+                self.SetStartDate(2020, 1, 1)  # Minimal date range
+                self.SetEndDate(2020, 1, 2)    # 1 day only
+                self.SetCash(1000000)          # Minimal cash (no trades will be made)
+                self.Log("Emergency fallback: Set minimal QC framework parameters")
+                self.Log("IMPORTANT: Algorithm will not trade - configuration required")
+            except Exception as qc_e:
+                self.Error(f"Failed to set minimal QC parameters: {str(qc_e)}")
+            
+            self.Log("Emergency fallback initialization complete - CRASH PREVENTION ONLY")
+            self.Log("SECURITY COMPLIANCE: No trading configuration fallbacks used")
             
         except Exception as e:
             self.Error(f"Emergency fallback failed: {str(e)}")
-            # Final fallback - just set minimum QC parameters
-            try:
-                self.SetStartDate(2015, 1, 1)
-                self.SetEndDate(2020, 1, 1)
-                self.SetCash(10000000)
-                self.Log("Final fallback: Set basic algorithm parameters only")
-            except Exception as final_e:
-                self.Error(f"Final fallback also failed: {str(final_e)}")
+            self.Error("CRITICAL: Algorithm cannot initialize even crash prevention mode")
+            # Don't attempt any further fallbacks - let it fail
     
     def OnSecuritiesChanged(self, changes):
         """Forward security changes to orchestrator for strategy initialization."""
@@ -435,19 +394,26 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
     def OnSymbolChangedEvents(self, symbolChangedEvents):
         """Handle futures rollover events using config-driven settings."""
         try:
-            # Get rollover configuration from config with defensive access
-            config = self.config_manager.get_config()
-            execution_config = config.get('execution', {})
-            rollover_config = execution_config.get('rollover_config', {
-                'enabled': True,
-                'order_type': 'market',
-                'retry_attempts': 3,
-                'log_rollover_events': True,
-                'rollover_tag_prefix': 'ROLLOVER',
-                'validate_rollover_contracts': True,
-                'emergency_liquidation': True,
-                'track_rollover_costs': True
-            })
+            # SECURITY: No fallback configuration - fail fast if config is invalid
+            if not self.config_manager or not self.config:
+                self.Error("SECURITY: No valid configuration available for rollover handling")
+                self.Error("CRITICAL: Cannot execute rollover without validated configuration")
+                return
+            
+            # Get rollover configuration from validated config manager ONLY
+            try:
+                execution_config = self.config_manager.get_execution_config()
+                rollover_config = execution_config.get('rollover_config', {})
+                
+                if not rollover_config:
+                    self.Error("SECURITY: No rollover_config found in validated configuration")
+                    self.Error("CRITICAL: Cannot execute rollover without rollover configuration")
+                    return
+                    
+            except Exception as config_error:
+                self.Error(f"SECURITY: Failed to get rollover configuration: {str(config_error)}")
+                self.Error("CRITICAL: Cannot execute rollover without validated configuration")
+                return
             
             # Check if rollover handling is enabled
             if not rollover_config.get('enabled', True):
@@ -483,6 +449,14 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 # Track rollover costs if configured
                 if rollover_config.get('track_rollover_costs', True) and hasattr(self, 'system_reporter'):
                     self.system_reporter.track_rollover_cost(oldSymbol, newSymbol, quantity)
+            
+            # Defensive check: Initialize tracking variables if not already set
+            if not hasattr(self, '_rollover_events_count'):
+                self._warmup_completed = False
+                self._first_rebalance_attempted = False
+                self._rollover_events_count = 0
+                self._algorithm_start_time = self.Time
+                self.Log("WARNING: Tracking variables initialized in OnSymbolChangedEvents (should have been in Initialize)")
             
             self._rollover_events_count += len(symbolChangedEvents)
             
@@ -544,6 +518,14 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
     def OnData(self, slice):
         """Handle market data updates with targeted position management for bad data."""
         try:
+            # Defensive check: Initialize tracking variables if not already set
+            if not hasattr(self, '_warmup_completed'):
+                self._warmup_completed = False
+                self._first_rebalance_attempted = False
+                self._rollover_events_count = 0
+                self._algorithm_start_time = self.Time
+                self.Log("WARNING: Tracking variables initialized in OnData (should have been in Initialize)")
+            
             if self.IsWarmingUp:
                 if not self._warmup_completed:
                     # Update components during warmup with basic validation
@@ -556,7 +538,7 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             if not self._warmup_completed:
                 self._warmup_completed = True
                 self.Log("Warmup completed - System ready for trading")
-
+                
             # TARGETED APPROACH: Basic validation + position management for bad data
             validated_slice = self._validate_slice_data_basic(slice)
             
@@ -905,6 +887,14 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
     def WeeklyRebalance(self):
         """Execute weekly portfolio rebalancing."""
         try:
+            # Defensive check: Initialize tracking variables if not already set
+            if not hasattr(self, '_first_rebalance_attempted'):
+                self._warmup_completed = False
+                self._first_rebalance_attempted = False
+                self._rollover_events_count = 0
+                self._algorithm_start_time = self.Time
+                self.Log("WARNING: Tracking variables initialized in WeeklyRebalance (should have been in Initialize)")
+            
             if self.IsWarmingUp:
                 return
                 
@@ -1005,6 +995,14 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
     def OnEndOfAlgorithm(self):
         """Generate final algorithm report."""
         try:
+            # Defensive check: Initialize tracking variables if not already set
+            if not hasattr(self, '_rollover_events_count'):
+                self._warmup_completed = False
+                self._first_rebalance_attempted = False
+                self._rollover_events_count = 0
+                self._algorithm_start_time = self.Time
+                self.Log("WARNING: Tracking variables initialized in OnEndOfAlgorithm (should have been in Initialize)")
+            
             self.Log("="*80)
             self.Log("ALGORITHM ENDING - GENERATING FINAL REPORT")
             self.Log("="*80)
@@ -1016,7 +1014,7 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             self.Log(f"Final system metrics:")
             self.Log(f"  Rollover events handled: {self._rollover_events_count}")
             self.Log(f"  First rebalance attempted: {self._first_rebalance_attempted}")
-            self.Log(f"  Futures symbols tracked: {len(self.futures_symbols)}")
+            self.Log(f"  Futures symbols tracked: {len(getattr(self, 'futures_symbols', []))}")
             
         except Exception as e:
             self.Error(f"Error in OnEndOfAlgorithm: {str(e)}")

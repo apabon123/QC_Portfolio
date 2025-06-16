@@ -229,37 +229,54 @@ class SystemReporter:
             return 100.0  # Fallback price
     
     def generate_daily_performance_update(self) -> Dict[str, Any]:
-        """Generate daily performance metrics and risk monitoring."""
+        """Generate comprehensive daily performance update with professional metrics."""
         try:
+            current_time = self.algorithm.Time
             portfolio_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
-            timestamp = self.algorithm.Time
             
-            # Calculate daily metrics
-            daily_metrics = {
-                'timestamp': timestamp,
+            # Core performance metrics
+            daily_return = self._calculate_daily_return()
+            portfolio_volatility = self._calculate_portfolio_volatility()
+            sharpe_ratio = self._calculate_sharpe_ratio()
+            gross_exposure = self._calculate_gross_exposure()
+            net_exposure = self._calculate_net_exposure()
+            max_drawdown = self._calculate_drawdown()
+            
+            # NEW: Data cache performance metrics
+            cache_stats = self._get_data_cache_stats()
+            
+            # System health metrics
+            system_health = {
+                'data_cache_performance': cache_stats,
+                'total_trades_today': len([t for t in self.trade_history if t['timestamp'].date() == current_time.date()]),
+                'active_positions': len([p for p in self.algorithm.Portfolio.Values if p.Invested]),
+                'cash_utilization': 1.0 - (self.algorithm.Portfolio.Cash / portfolio_value),
+                'algorithm_uptime_hours': (current_time - self.algorithm.StartDate).total_seconds() / 3600
+            }
+            
+            daily_update = {
+                'timestamp': current_time,
                 'portfolio_value': portfolio_value,
-                'daily_return': self._calculate_daily_return(),
-                'portfolio_volatility': self._calculate_portfolio_volatility(),
-                'gross_exposure': self._calculate_gross_exposure(),
-                'net_exposure': self._calculate_net_exposure(),
-                'cash_utilization': self._calculate_cash_utilization(),
-                'position_count': len([h for h in self.algorithm.Portfolio.Values if h.Invested]),
-                'largest_position': self._get_largest_position_weight(),
-                'drawdown': self._calculate_drawdown(),
-                'sharpe_ratio': self._calculate_sharpe_ratio(period_days=63),
-                'var_95': self._calculate_var(confidence=0.95)
+                'daily_return': daily_return,
+                'portfolio_volatility': portfolio_volatility,
+                'sharpe_ratio': sharpe_ratio,
+                'gross_exposure': gross_exposure,
+                'net_exposure': net_exposure,
+                'max_drawdown': max_drawdown,
+                'system_health': system_health,
+                'layer_attribution': dict(self.layer_attribution),
+                'recent_alerts': {
+                    'performance': self.alerts['performance'][-5:],
+                    'risk': self.alerts['risk'][-5:],
+                    'execution': self.alerts['execution'][-5:],
+                    'system': self.alerts['system'][-5:]
+                }
             }
             
             # Add to performance history
-            self.performance_history.append(daily_metrics)
+            self.performance_history.append(daily_update)
             
-            # Update risk metrics
-            self._update_risk_metrics(daily_metrics)
-            
-            # Check for risk alerts
-            self._check_risk_alerts(daily_metrics)
-            
-            return daily_metrics
+            return daily_update
             
         except Exception as e:
             self.algorithm.Log(f"SystemReporter ERROR generating daily update: {str(e)}")
@@ -675,3 +692,40 @@ class SystemReporter:
     def _final_execution_summary(self) -> Dict[str, Any]: return {}
     def _final_system_analysis(self) -> Dict[str, Any]: return {}
     def _generate_lessons_learned(self) -> List[str]: return []
+    
+    def _get_data_cache_stats(self) -> Dict[str, Any]:
+        """Get data cache performance statistics."""
+        try:
+            # Get cache stats from DataIntegrityChecker if available
+            if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
+                cache_stats = self.algorithm.data_integrity_checker.get_cache_stats()
+                
+                # Enhance with performance analysis
+                cache_performance = {
+                    'enabled': True,
+                    'total_requests': cache_stats.get('total_requests', 0),
+                    'cache_hits': cache_stats.get('cache_hits', 0),
+                    'cache_misses': cache_stats.get('cache_misses', 0),
+                    'hit_rate_percent': cache_stats.get('hit_rate_percent', 0.0),
+                    'api_calls_saved': cache_stats.get('api_calls_saved', 0),
+                    'cache_entries': cache_stats.get('cache_entries', 0),
+                    'max_cache_entries': cache_stats.get('max_cache_entries', 0),
+                    'cache_efficiency': 'excellent' if cache_stats.get('hit_rate_percent', 0) > 80 else 
+                                      'good' if cache_stats.get('hit_rate_percent', 0) > 60 else
+                                      'needs_improvement' if cache_stats.get('hit_rate_percent', 0) > 30 else
+                                      'poor'
+                }
+                
+                return cache_performance
+            else:
+                return {
+                    'enabled': False,
+                    'status': 'no_cache_available',
+                    'impact': 'potential_concurrency_issues'
+                }
+                
+        except Exception as e:
+            return {
+                'enabled': False,
+                'error': str(e)
+            }

@@ -4,9 +4,9 @@ from AlgorithmImports import *
 from collections import deque
 
 # Import component modules
-from .strategy_loader import StrategyLoader
-from .layer_two_allocator import LayerTwoAllocator  
-from ..risk.layer_three_risk_manager import LayerThreeRiskManager
+from components.strategy_loader import StrategyLoader
+from components.layer_two_allocator import LayerTwoAllocator  
+from risk.layer_three_risk_manager import LayerThreeRiskManager
 
 class ThreeLayerOrchestrator:
     """

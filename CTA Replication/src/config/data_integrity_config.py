@@ -9,6 +9,13 @@ DATA_INTEGRITY_CONFIG = {
     'quarantine_duration_days': 7,   # Days to keep symbol quarantined (increased)
     'extreme_change_threshold': 3,   # Number of extreme changes before quarantine (reduced)
     
+    # NEW: CENTRALIZED DATA CACHE CONFIGURATION (solves concurrency issues)
+    'cache_max_age_hours': 24,       # How long to keep cached data (hours)
+    'cache_cleanup_frequency_hours': 6,  # How often to clean up old cache entries
+    'max_cache_entries': 1000,       # Maximum number of cache entries before cleanup
+    'cache_enabled': True,           # Enable/disable centralized caching
+    'cache_debug_logging': False,    # Enable detailed cache debug logging
+    
     # Price validation ranges for each futures contract
     # Format: ticker: (min_price, max_price)
     'price_ranges': {

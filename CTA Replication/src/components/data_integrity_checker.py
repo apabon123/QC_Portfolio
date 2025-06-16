@@ -11,45 +11,59 @@ class DataIntegrityChecker:
     - Focuses only on what QC doesn't already provide
     """
     
-    def __init__(self, algorithm):
+    def __init__(self, algorithm, config_manager=None):
+        """
+        Initialize Data Integrity Checker with centralized configuration.
+        CRITICAL: All configuration comes through centralized config manager only.
+        """
         self.algorithm = algorithm
+        self.config_manager = config_manager
         
-        # Import configuration
         try:
-            from config.data_integrity_config import DATA_INTEGRITY_CONFIG
-            self.config = DATA_INTEGRITY_CONFIG
-        except ImportError:
-            # Fallback minimal config
-            self.config = {
-                'max_zero_price_streak': 3,
-                'quarantine_duration_days': 5,
-                'price_ranges': {},
-                'cache_max_age_hours': 24,
-                'cache_cleanup_frequency_hours': 6,
-                'max_cache_entries': 1000
+            if self.config_manager:
+                # Get data integrity configuration through centralized manager ONLY
+                self.config = self.config_manager.get_data_integrity_config()
+            else:
+                # Emergency minimal config if no config manager (should not happen in production)
+                self.algorithm.Log("WARNING: No config manager provided to DataIntegrityChecker")
+                self.config = {
+                    'max_zero_price_streak': 3,
+                    'max_no_data_streak': 3,
+                    'quarantine_duration_days': 7,
+                    'price_ranges': {},
+                    'cache_max_age_hours': 24,
+                    'cache_cleanup_frequency_hours': 6,
+                    'max_cache_entries': 1000
+                }
+            
+            # Initialize tracking variables
+            self.quarantined_symbols = set()
+            self.quarantine_reasons = {}
+            self.quarantine_timestamps = {}
+            self.zero_price_streaks = {}
+            self.no_data_streaks = {}
+            self.last_valid_prices = {}
+            
+            # Cache management
+            self.cache_config = {
+                'max_age_hours': self.config['cache_max_age_hours'],
+                'cleanup_frequency_hours': self.config['cache_cleanup_frequency_hours'],
+                'max_entries': self.config['max_cache_entries']
             }
-        
-        # Lightweight tracking - let QC handle most validation
-        self.quarantined_symbols = set()
-        self.quarantine_timestamps = {}
-        self.quarantine_reasons = {}
-        
-        # Track only what QC doesn't provide
-        self.zero_price_streaks = {}  # Count consecutive zero prices
-        self.last_quarantine_check = None
+            self.validation_cache = {}
+            self.last_cache_cleanup = self.algorithm.Time
+            
+            self.algorithm.Log(f"DataIntegrityChecker: Initialized with quarantine duration {self.config['quarantine_duration_days']} days")
+            
+        except Exception as e:
+            error_msg = f"CRITICAL ERROR initializing DataIntegrityChecker: {str(e)}"
+            self.algorithm.Error(error_msg)
+            raise ValueError(error_msg)
         
         # NEW: CENTRALIZED DATA CACHING to solve concurrency issues
         self.history_cache = {}  # {cache_key: DataFrame}
         self.cache_timestamps = {}  # {cache_key: timestamp}
         self.cache_requests = {}  # {cache_key: request_count} - for debugging
-        self.last_cache_cleanup = None
-        
-        # NEW: Configuration for cache management
-        self.cache_config = {
-            'max_age_hours': self.config.get('cache_max_age_hours', 24),
-            'cleanup_frequency_hours': self.config.get('cache_cleanup_frequency_hours', 6),
-            'max_entries': self.config.get('max_cache_entries', 1000)
-        }
         
         # NEW: Statistics tracking
         self.cache_stats = {

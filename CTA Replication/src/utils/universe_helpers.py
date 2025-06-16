@@ -3,22 +3,50 @@ Helper utilities for universe management and initialization.
 """
 
 class UniverseHelpers:
-    """Helper class for universe operations."""
+    """
+    Universe management utilities with centralized configuration.
+    CRITICAL: All configuration comes through centralized config manager only.
+    """
     
     def __init__(self, algorithm, config_manager):
+        """
+        Initialize Universe Helpers with centralized configuration.
+        CRITICAL: NO direct config access - all through config manager.
+        """
         self.algorithm = algorithm
         self.config_manager = config_manager
+        
+        try:
+            # Get universe configuration through centralized manager ONLY
+            self.universe_config = self.config_manager.get_universe_config()
+            
+            # Extract futures tickers from validated configuration
+            self.futures_tickers = []
+            for priority_group in self.universe_config.values():
+                for symbol_config in priority_group:
+                    self.futures_tickers.append(symbol_config['ticker'])
+            
+            if not self.futures_tickers:
+                error_msg = "No futures tickers found in universe configuration"
+                self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                raise ValueError(error_msg)
+            
+            self.algorithm.Log(f"UniverseHelpers: Initialized with {len(self.futures_tickers)} futures tickers")
+            
+        except Exception as e:
+            error_msg = f"CRITICAL ERROR initializing UniverseHelpers: {str(e)}"
+            self.algorithm.Error(error_msg)
+            raise ValueError(error_msg)
     
     def initialize_universe(self):
-        """Initialize universe data structure without complex objects."""
+        """
+        Initialize universe data using centralized configuration.
+        CRITICAL: Uses only validated configuration from centralized manager.
+        """
         try:
-            # Get basic configuration
-            config = self.config_manager.load_and_validate_config()
-            futures_tickers = config.get('futures_universe', ['ES', 'NQ', 'ZN'])
-            
-            # Create simple universe data structure
+            # Use futures tickers from validated configuration
             universe_data = {
-                'tickers': futures_tickers,
+                'tickers': self.futures_tickers,
                 'symbols': [],  # Will be populated by futures helper
                 'status': 'initialized',
                 'is_ready': True,
@@ -29,18 +57,13 @@ class UniverseHelpers:
                 }
             }
             
-            self.algorithm.Log(f"UniverseHelper: Initialized universe with {len(futures_tickers)} tickers")
+            self.algorithm.Log(f"UniverseHelper: Initialized universe with {len(self.futures_tickers)} tickers")
             return universe_data
             
         except Exception as e:
-            self.algorithm.Error(f"UniverseHelper: Failed to initialize universe: {str(e)}")
-            # Return minimal fallback
-            return {
-                'tickers': ['ES', 'NQ', 'ZN'],
-                'symbols': [],
-                'status': 'fallback',
-                'is_ready': True
-            }
+            error_msg = f"CRITICAL ERROR initializing universe: {str(e)}"
+            self.algorithm.Error(error_msg)
+            raise ValueError(error_msg)
     
     def get_universe_summary(self, universe_data):
         """Get universe summary for logging."""

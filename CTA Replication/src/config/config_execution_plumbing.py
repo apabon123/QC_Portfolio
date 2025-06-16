@@ -75,6 +75,24 @@ QC_NATIVE_CONFIG = {
 # FUTURES CONFIGURATION - CRITICAL FOR ROLLOVER BEHAVIOR
 # =============================================================================
 FUTURES_CONFIG = {
+    # AddFuture Parameters - Now configurable instead of hardcoded
+    'add_future_params': {
+        'resolution': 'Daily',                              # Resolution.Daily
+        'fill_forward': True,                               # Fill missing data points
+        'leverage': 1.0,                                    # Conservative leverage
+        'extended_market_hours': False,                     # Standard market hours for most futures
+        'data_mapping_mode': 'OpenInterest',                # DataMappingMode.OpenInterest - WHEN to rollover
+        'data_normalization_mode': 'BackwardsRatio',        # DataNormalizationMode.BackwardsRatio - HOW to adjust prices
+        'contract_depth_offset': 0,                         # 0 = front month, 1 = back month
+    },
+    
+    # Contract Filter Parameters
+    'contract_filter': {
+        'min_days_out': 0,                                  # Include contracts expiring in 0+ days
+        'max_days_out': 182,                                # Include contracts expiring within 182 days (6 months)
+    },
+    
+    # Legacy string format (for backward compatibility)
     'data_mapping_mode': 'DataMappingMode.OpenInterest',      # WHEN to rollover: based on open interest
     'data_normalization_mode': 'DataNormalizationMode.BackwardsRatio',  # HOW to adjust prices
     'contract_depth_offset': 0,                               # 0 = front month, 1 = back month

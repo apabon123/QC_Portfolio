@@ -11,44 +11,46 @@ class LayerThreeRiskManager:
     """
     
     def __init__(self, algorithm, config_manager):
+        """
+        Initialize Layer Three Risk Manager with centralized configuration.
+        CRITICAL: All configuration comes through centralized config manager only.
+        """
         self.algorithm = algorithm
         self.config_manager = config_manager
-        self.risk_config = config_manager.get_risk_config()
         
-        # CONFIG-COMPLIANT risk parameters
-        self.target_portfolio_vol = self.risk_config.get('target_portfolio_vol', 0.5)
-        self.min_notional_exposure = self.risk_config.get('min_notional_exposure', 3.0)
-        self.max_leverage_multiplier = self.risk_config.get('max_leverage_multiplier', 100)
-        self.daily_stop_loss = self.risk_config.get('daily_stop_loss', 0.2)
-        self.max_drawdown_stop = self.risk_config.get('max_drawdown_stop', 0.75)
-        self.max_single_position = self.risk_config.get('max_single_position', 10.0)
-        
-        # Covariance parameters
-        self.use_correlation = config_manager.get_allocation_config().get('use_correlation', True)
-        self.correlation_lookback_days = config_manager.get_allocation_config().get('correlation_lookback_days', 126)
-        
-        # Enhanced return tracking
-        self.symbol_returns = {}
-        self.correlation_matrix = {}
-        self.volatility_estimates = {}
-        self._last_return_update_date = None
-        
-        # Performance tracking
-        self.risk_adjustments_made = 0
-        self.volatility_scalings = 0
-        self.position_limits_applied = 0
-        
-        # Portfolio tracking
-        self.last_portfolio_value = 0
-        self.peak_portfolio_value = 0
-        self.current_drawdown = 0
-        self.emergency_stop_triggered = False
-        
-        # Risk metrics history
-        self.risk_metrics_history = deque(maxlen=252)
-        
-        self.algorithm.Log(f"LAYER 3: Enhanced Risk Manager initialized with {self.target_portfolio_vol:.1%} vol target")
-        self.algorithm.Log(f"LAYER 3: Daily return tracking enabled for real covariance matrix")
+        try:
+            # Get risk configuration through centralized manager ONLY
+            self.risk_config = self.config_manager.get_risk_config()
+            
+            # Initialize risk parameters from validated config
+            self.target_portfolio_vol = self.risk_config['target_portfolio_vol']
+            self.min_notional_exposure = self.risk_config['min_notional_exposure']
+            self.max_leverage_multiplier = self.risk_config['max_leverage_multiplier']
+            self.daily_stop_loss = self.risk_config['daily_stop_loss']
+            self.max_drawdown_stop = self.risk_config['max_drawdown_stop']
+            self.max_single_position = self.risk_config['max_single_position']
+            
+            # Initialize correlation and volatility parameters from allocation config
+            allocation_config = self.config_manager.get_allocation_config()
+            self.use_correlation = allocation_config.get('use_correlation', True)
+            self.correlation_lookback_days = allocation_config.get('correlation_lookback_days', 126)
+            
+            # Initialize tracking variables
+            self.portfolio_returns = deque(maxlen=self.risk_config.get('vol_estimation_days', 252))
+            self.symbol_returns = {}
+            self.volatility_estimates = {}
+            self.correlation_matrix = {}
+            self.last_portfolio_value = None
+            self.peak_portfolio_value = None
+            self.current_drawdown = 0.0
+            
+            self.algorithm.Log(f"LayerThreeRiskManager: Initialized with target vol {self.target_portfolio_vol:.1%}, "
+                             f"max leverage {self.max_leverage_multiplier}x")
+            
+        except Exception as e:
+            error_msg = f"CRITICAL ERROR initializing LayerThreeRiskManager: {str(e)}"
+            self.algorithm.Error(error_msg)
+            raise ValueError(error_msg)
     
     def apply_portfolio_risk_management(self, combined_targets):
         """Main entry point for Layer 3 risk management."""
@@ -88,8 +90,15 @@ class LayerThreeRiskManager:
                     if security.Price <= 0:
                         continue
                     
-                    history = self.algorithm.History([symbol], 2, Resolution.Daily)
-                    if not history.empty and len(history) >= 2:
+                    # Use centralized data provider if available
+                    if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
+                        history = self.algorithm.data_integrity_checker.get_history(symbol, 2, Resolution.Daily)
+                    else:
+                        # Fallback to direct API call (not recommended)
+                        self.algorithm.Log(f"RiskManager: WARNING - No centralized cache for {symbol}, using direct History API")
+                        history = self.algorithm.History([symbol], 2, Resolution.Daily)
+                    
+                    if history is not None and not history.empty and len(history) >= 2:
                         prices = history['close'].values
                         if len(prices) >= 2 and prices[-2] > 0:
                             daily_return = (prices[-1] - prices[-2]) / prices[-2]

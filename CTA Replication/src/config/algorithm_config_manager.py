@@ -34,73 +34,8 @@ except ImportError:
         from .config import get_full_config
     except ImportError:
         # Final fallback - inline config
-        def get_full_config():
-            return {
-                'algorithm': {
-                    'start_date': {'year': 2015, 'month': 1, 'day': 1},
-                    'end_date': {'year': 2020, 'month': 1, 'day': 1},
-                    'initial_cash': 10000000,
-                    'warmup_period_days': 80
-                },
-                'strategies': {
-                    'KestnerCTA': {
-                        'enabled': True,
-                        'name': 'KestnerCTA',
-                        'module': 'strategies.kestner_cta_strategy',
-                        'class': 'KestnerCTAStrategy',
-                        'momentum_lookbacks': [16, 32, 52],
-                        'volatility_lookback_days': 63,
-                        'target_volatility': 0.2,
-                        'rebalance_frequency': 'weekly',
-                        'max_position_weight': 0.6
-                    }
-                },
-                'universe': {
-                    'futures': {
-                        'ES': {'name': 'E-mini S&P 500', 'priority': 1, 'category': 'equity_index'},
-                        'NQ': {'name': 'E-mini NASDAQ 100', 'priority': 1, 'category': 'equity_index'},
-                        'ZN': {'name': '10-Year Treasury Note', 'priority': 1, 'category': 'bond'}
-                    },
-                    'expansion_candidates': {}
-                },
-                'strategy_allocation': {
-                    'initial_allocations': {'KestnerCTA': 1.0},
-                    'allocation_bounds': {'KestnerCTA': {'min': 0.3, 'max': 1.0}}
-                },
-                'portfolio_risk': {
-                    'target_portfolio_vol': 0.6,
-                    'max_leverage_multiplier': 100,
-                    'max_gross_exposure': 10.0,
-                    'max_single_position': 10.0,
-                    'daily_stop_loss': 0.2
-                },
-                'execution': {
-                    'rollover_config': {
-                        'enabled': True,
-                        'order_type': 'market',
-                        'retry_attempts': 3,
-                        'log_rollover_events': True,
-                        'rollover_tag_prefix': 'ROLLOVER',
-                        'validate_rollover_contracts': True,
-                        'emergency_liquidation': True,
-                        'track_rollover_costs': True
-                    },
-                    'min_trade_value': 1000,
-                    'min_weight_change': 0.01,
-                    'max_single_order_value': 50000000
-                },
-                'constraints': {
-                    'min_capital': 5000000,
-                    'initial_capital': 10000000,
-                    'max_total_positions': 50
-                },
-                'system': {
-                    'name': 'Three-Layer CTA System',
-                    'version': '1.0.0',
-                    'description': 'QuantConnect Three-Layer CTA Portfolio System (Inline Fallback)',
-                    'last_updated': '2024-01-01'
-                }
-            }
+        # Import the proper configuration from config.py
+        from config import get_full_config
 
 class AlgorithmConfigManager:
     """
@@ -565,46 +500,157 @@ class AlgorithmConfigManager:
         """Get the risk management configuration."""
         return self.config['portfolio_risk']
     
-    def get_universe_config(self):
-        """Get universe configuration for futures manager"""
-        universe_config = self.config.get('universe', {})
-        futures_config = universe_config.get('futures', {})
-        expansion_config = universe_config.get('expansion_candidates', {})
+    def get_universe_config(self, max_priority=None):
+        """
+        Get universe configuration for futures manager with robust structure handling
         
-        # Transform the nested configuration into priority-based structure
-        priority_groups = {}
+        Args:
+            max_priority: Maximum priority level to include (if None, uses config setting)
+        """
+        try:
+            universe_config = self.config.get('universe', {})
+            
+            # Get priority filtering settings from config
+            loading_config = universe_config.get('loading', {})
+            if max_priority is None:
+                max_priority = loading_config.get('max_priority', 2)
+            
+            self.algorithm.Log(f"CONFIG: Loading universe with max priority: {max_priority}")
+            
+            futures_config = universe_config.get('futures', {})
+            expansion_config = universe_config.get('expansion_candidates', {})
+            
+            # Check if expansion candidates should be included
+            include_expansion = loading_config.get('include_expansion_candidates', True)
+            if not include_expansion:
+                self.algorithm.Log("CONFIG: Skipping expansion candidates per configuration")
+                expansion_config = {}
+            
+            # Transform the configuration into priority-based structure
+            priority_groups = {}
+            
+            # ROBUST HANDLING: Detect if futures_config is nested or flat
+            is_nested_structure = self._detect_nested_futures_structure(futures_config)
+            
+            if is_nested_structure:
+                # Handle nested structure (category -> symbols)
+                self.algorithm.Log("CONFIG: Processing nested futures structure")
+                for category, symbols in futures_config.items():
+                    if isinstance(symbols, dict):
+                        for ticker, symbol_config in symbols.items():
+                            if isinstance(symbol_config, dict):
+                                # Apply priority filtering
+                                symbol_priority = symbol_config.get('priority', 1)
+                                if symbol_priority <= max_priority:
+                                    self._add_symbol_to_priority_groups(
+                                        priority_groups, ticker, symbol_config, category
+                                    )
+                                else:
+                                    self.algorithm.Log(f"CONFIG: Skipping {ticker} (priority {symbol_priority} > {max_priority})")
+                            else:
+                                self.algorithm.Error(f"CONFIG ERROR: Invalid symbol config for {ticker} in {category}")
+                                raise ValueError(f"Invalid symbol configuration structure for {ticker}")
+                    else:
+                        self.algorithm.Error(f"CONFIG ERROR: Invalid category structure for {category}")
+                        raise ValueError(f"Invalid category configuration structure for {category}")
+            else:
+                # Handle flat structure (ticker -> config)
+                self.algorithm.Log("CONFIG: Processing flat futures structure")
+                for ticker, symbol_config in futures_config.items():
+                    if isinstance(symbol_config, dict):
+                        category = symbol_config.get('category', 'futures')
+                        # Apply priority filtering
+                        symbol_priority = symbol_config.get('priority', 1)
+                        if symbol_priority <= max_priority:
+                            self._add_symbol_to_priority_groups(
+                                priority_groups, ticker, symbol_config, category
+                            )
+                        else:
+                            self.algorithm.Log(f"CONFIG: Skipping {ticker} (priority {symbol_priority} > {max_priority})")
+                    else:
+                        self.algorithm.Error(f"CONFIG ERROR: Invalid symbol config for {ticker}")
+                        raise ValueError(f"Invalid symbol configuration structure for {ticker}")
+            
+            # Process expansion candidates (always flat structure) with priority filtering
+            for ticker, symbol_config in expansion_config.items():
+                if isinstance(symbol_config, dict):
+                    category = symbol_config.get('category', 'futures')
+                    # Apply priority filtering
+                    symbol_priority = symbol_config.get('priority', 1)
+                    if symbol_priority <= max_priority:
+                        self._add_symbol_to_priority_groups(
+                            priority_groups, ticker, symbol_config, category
+                        )
+                    else:
+                        self.algorithm.Log(f"CONFIG: Skipping expansion candidate {ticker} (priority {symbol_priority} > {max_priority})")
+                else:
+                    self.algorithm.Error(f"CONFIG ERROR: Invalid expansion candidate config for {ticker}")
+                    raise ValueError(f"Invalid expansion candidate configuration for {ticker}")
+            
+            # VALIDATION: Ensure we have symbols
+            total_symbols = sum(len(symbols) for symbols in priority_groups.values())
+            if total_symbols == 0:
+                self.algorithm.Error("CONFIG ERROR: No valid symbols found in universe configuration")
+                raise ValueError("No valid symbols found in universe configuration")
+            
+            self.algorithm.Log(f"CONFIG SUCCESS: Loaded {total_symbols} symbols across {len(priority_groups)} priority groups (max priority: {max_priority})")
+            return priority_groups
+            
+        except Exception as e:
+            self.algorithm.Error(f"CRITICAL CONFIG ERROR in get_universe_config: {str(e)}")
+            # DO NOT USE FALLBACK - Raise the error to stop execution
+            raise ValueError(f"Universe configuration failed: {str(e)}")
+    
+    def _detect_nested_futures_structure(self, futures_config):
+        """Detect if futures config uses nested (category-based) or flat structure"""
+        if not futures_config:
+            return False
         
-        # Process main futures configuration
-        for category, symbols in futures_config.items():
-            for ticker, symbol_config in symbols.items():
-                priority = symbol_config.get('priority', 1)
-                if priority not in priority_groups:
-                    priority_groups[priority] = []
-                
-                # Create symbol config with ticker
-                symbol_entry = {
-                    'ticker': ticker,
-                    'name': symbol_config.get('name', ticker),
-                    'category': symbol_config.get('category', 'futures'),
-                    'market': 'CME'  # Default market
-                }
-                priority_groups[priority].append(symbol_entry)
+        # Sample the first entry to determine structure
+        first_key = next(iter(futures_config.keys()))
+        first_value = futures_config[first_key]
         
-        # Process expansion candidates
-        for ticker, symbol_config in expansion_config.items():
-            priority = symbol_config.get('priority', 2)
+        # If first value is a dict containing other dicts, it's nested
+        if isinstance(first_value, dict):
+            # Check if it contains symbol configs (has 'name', 'priority', etc.)
+            # or if it contains other dicts (nested structure)
+            has_symbol_properties = any(key in first_value for key in ['name', 'priority', 'category'])
+            has_nested_dicts = any(isinstance(v, dict) for v in first_value.values())
+            
+            if has_symbol_properties and not has_nested_dicts:
+                return False  # Flat structure
+            elif has_nested_dicts and not has_symbol_properties:
+                return True   # Nested structure
+            else:
+                # Ambiguous - default to flat and let validation catch issues
+                return False
+        
+        return False
+    
+    def _add_symbol_to_priority_groups(self, priority_groups, ticker, symbol_config, category):
+        """Add a symbol to priority groups with validation"""
+        try:
+            priority = symbol_config.get('priority', 1)
             if priority not in priority_groups:
                 priority_groups[priority] = []
             
+            # Create symbol config with validation
             symbol_entry = {
                 'ticker': ticker,
                 'name': symbol_config.get('name', ticker),
-                'category': symbol_config.get('category', 'futures'),
-                'market': 'CME'  # Default market
+                'category': symbol_config.get('category', category),
+                'market': symbol_config.get('market', 'CME')
             }
+            
+            # Validate required fields
+            if not ticker:
+                raise ValueError(f"Missing ticker for symbol")
+            
             priority_groups[priority].append(symbol_entry)
-        
-        return priority_groups
+            
+        except Exception as e:
+            self.algorithm.Error(f"Error adding symbol {ticker}: {str(e)}")
+            raise
     
     def is_strategy_enabled(self, strategy_name):
         """Check if a strategy is enabled."""
@@ -708,3 +754,275 @@ class AlgorithmConfigManager:
         """Validate a runtime configuration change before applying it."""
         # Add validation logic here as needed
         return True
+
+    # =============================================================================
+    # CENTRALIZED CONFIGURATION ACCESS METHODS
+    # =============================================================================
+    # ALL configuration access MUST go through these methods
+    # NO other file should access config directly or have fallback logic
+    
+    def get_strategy_config(self, strategy_name: str) -> dict:
+        """
+        Get complete strategy configuration with validation.
+        CRITICAL: This is the ONLY way strategies should get their config.
+        """
+        try:
+            strategies = self.config.get('strategies', {})
+            if strategy_name not in strategies:
+                error_msg = f"Strategy '{strategy_name}' not found in configuration"
+                self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                raise ValueError(error_msg)
+            
+            strategy_config = strategies[strategy_name]
+            if not isinstance(strategy_config, dict):
+                error_msg = f"Invalid configuration structure for strategy '{strategy_name}'"
+                self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                raise ValueError(error_msg)
+            
+            # Validate required fields
+            if not strategy_config.get('enabled', False):
+                error_msg = f"Strategy '{strategy_name}' is not enabled"
+                self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                raise ValueError(error_msg)
+            
+            return strategy_config
+            
+        except Exception as e:
+            error_msg = f"Failed to get strategy config for '{strategy_name}': {str(e)}"
+            self.algorithm.Error(f"CRITICAL CONFIG ERROR: {error_msg}")
+            raise ValueError(error_msg)
+    
+    def get_risk_config(self) -> dict:
+        """
+        Get complete risk management configuration with validation.
+        CRITICAL: This is the ONLY way risk managers should get their config.
+        """
+        try:
+            risk_config = self.config.get('portfolio_risk', {})
+            if not isinstance(risk_config, dict):
+                error_msg = "Invalid risk configuration structure"
+                self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                raise ValueError(error_msg)
+            
+            # Validate critical risk parameters
+            required_params = [
+                'target_portfolio_vol', 'max_leverage_multiplier', 
+                'daily_stop_loss', 'max_single_position'
+            ]
+            
+            for param in required_params:
+                if param not in risk_config:
+                    error_msg = f"Missing required risk parameter: {param}"
+                    self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                    raise ValueError(error_msg)
+                
+                value = risk_config[param]
+                if not isinstance(value, (int, float)) or value <= 0:
+                    error_msg = f"Invalid value for risk parameter {param}: {value}"
+                    self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                    raise ValueError(error_msg)
+            
+            return risk_config
+            
+        except Exception as e:
+            error_msg = f"Failed to get risk configuration: {str(e)}"
+            self.algorithm.Error(f"CRITICAL CONFIG ERROR: {error_msg}")
+            raise ValueError(error_msg)
+    
+    def get_execution_config(self) -> dict:
+        """
+        Get complete execution configuration with validation.
+        CRITICAL: This is the ONLY way execution managers should get their config.
+        """
+        try:
+            execution_config = self.config.get('execution', {})
+            if not isinstance(execution_config, dict):
+                error_msg = "Invalid execution configuration structure"
+                self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                raise ValueError(error_msg)
+            
+            # Validate critical execution parameters
+            required_params = ['min_trade_value', 'max_single_order_value']
+            
+            for param in required_params:
+                if param not in execution_config:
+                    error_msg = f"Missing required execution parameter: {param}"
+                    self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                    raise ValueError(error_msg)
+                
+                value = execution_config[param]
+                if not isinstance(value, (int, float)) or value <= 0:
+                    error_msg = f"Invalid value for execution parameter {param}: {value}"
+                    self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                    raise ValueError(error_msg)
+            
+            return execution_config
+            
+        except Exception as e:
+            error_msg = f"Failed to get execution configuration: {str(e)}"
+            self.algorithm.Error(f"CRITICAL CONFIG ERROR: {error_msg}")
+            raise ValueError(error_msg)
+    
+    def get_data_integrity_config(self) -> dict:
+        """
+        Get complete data integrity configuration with validation.
+        CRITICAL: This is the ONLY way data integrity checkers should get their config.
+        """
+        try:
+            data_config = self.config.get('data_integrity', {})
+            if not isinstance(data_config, dict):
+                error_msg = "Invalid data integrity configuration structure"
+                self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                raise ValueError(error_msg)
+            
+            # Provide validated defaults for data integrity
+            validated_config = {
+                'max_zero_price_streak': data_config.get('max_zero_price_streak', 3),
+                'max_no_data_streak': data_config.get('max_no_data_streak', 3),
+                'quarantine_duration_days': data_config.get('quarantine_duration_days', 7),
+                'price_ranges': data_config.get('price_ranges', {}),
+                'cache_max_age_hours': data_config.get('cache_max_age_hours', 24),
+                'cache_cleanup_frequency_hours': data_config.get('cache_cleanup_frequency_hours', 6),
+                'max_cache_entries': data_config.get('max_cache_entries', 1000)
+            }
+            
+            return validated_config
+            
+        except Exception as e:
+            error_msg = f"Failed to get data integrity configuration: {str(e)}"
+            self.algorithm.Error(f"CRITICAL CONFIG ERROR: {error_msg}")
+            raise ValueError(error_msg)
+    
+    def get_algorithm_config(self) -> dict:
+        """
+        Get complete algorithm configuration with validation.
+        CRITICAL: This is the ONLY way the main algorithm should get its config.
+        """
+        try:
+            algo_config = self.config.get('algorithm', {})
+            if not isinstance(algo_config, dict):
+                error_msg = "Invalid algorithm configuration structure"
+                self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                raise ValueError(error_msg)
+            
+            # Validate critical algorithm parameters
+            required_params = ['initial_cash', 'start_date', 'end_date']
+            
+            for param in required_params:
+                if param not in algo_config:
+                    error_msg = f"Missing required algorithm parameter: {param}"
+                    self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                    raise ValueError(error_msg)
+            
+            return algo_config
+            
+        except Exception as e:
+            error_msg = f"Failed to get algorithm configuration: {str(e)}"
+            self.algorithm.Error(f"CRITICAL CONFIG ERROR: {error_msg}")
+            raise ValueError(error_msg)
+    
+    def validate_complete_configuration(self) -> bool:
+        """
+        Validate the complete configuration before trading begins.
+        CRITICAL: This must pass before any trading can occur.
+        """
+        try:
+            self.algorithm.Log("CONFIG VALIDATION: Starting complete configuration validation...")
+            
+            # Validate algorithm config
+            algo_config = self.get_algorithm_config()
+            self.algorithm.Log("✓ Algorithm configuration validated")
+            
+            # Validate universe config
+            universe_config = self.get_universe_config()
+            total_symbols = sum(len(symbols) for symbols in universe_config.values())
+            if total_symbols == 0:
+                raise ValueError("No symbols found in universe configuration")
+            self.algorithm.Log(f"✓ Universe configuration validated ({total_symbols} symbols)")
+            
+            # Validate enabled strategies
+            enabled_strategies = self.get_enabled_strategies()
+            if not enabled_strategies:
+                raise ValueError("No enabled strategies found")
+            
+            for strategy_name in enabled_strategies:
+                strategy_config = self.get_strategy_config(strategy_name)
+                self.algorithm.Log(f"✓ Strategy '{strategy_name}' configuration validated")
+            
+            # Validate risk config
+            risk_config = self.get_risk_config()
+            self.algorithm.Log("✓ Risk management configuration validated")
+            
+            # Validate execution config
+            execution_config = self.get_execution_config()
+            self.algorithm.Log("✓ Execution configuration validated")
+            
+            # Validate data integrity config
+            data_config = self.get_data_integrity_config()
+            self.algorithm.Log("✓ Data integrity configuration validated")
+            
+            self.algorithm.Log("CONFIG VALIDATION: ✅ ALL CONFIGURATION VALIDATED SUCCESSFULLY")
+            return True
+            
+        except Exception as e:
+            error_msg = f"CONFIGURATION VALIDATION FAILED: {str(e)}"
+            self.algorithm.Error(f"CRITICAL ERROR: {error_msg}")
+            self.algorithm.Error("STOPPING ALGORITHM: Cannot trade with invalid configuration")
+            raise ValueError(error_msg)
+    
+    def get_config_audit_report(self) -> str:
+        """
+        Generate a complete audit report of all configuration values.
+        CRITICAL: Use this to verify exactly what configuration is being used.
+        """
+        try:
+            report_lines = []
+            report_lines.append("=" * 80)
+            report_lines.append("CONFIGURATION AUDIT REPORT")
+            report_lines.append("=" * 80)
+            
+            # Algorithm configuration
+            algo_config = self.get_algorithm_config()
+            report_lines.append("\n[ALGORITHM CONFIGURATION]")
+            for key, value in algo_config.items():
+                report_lines.append(f"  {key}: {value}")
+            
+            # Universe configuration
+            universe_config = self.get_universe_config()
+            report_lines.append("\n[UNIVERSE CONFIGURATION]")
+            for priority, symbols in universe_config.items():
+                report_lines.append(f"  Priority {priority}: {len(symbols)} symbols")
+                for symbol in symbols:
+                    report_lines.append(f"    - {symbol['ticker']}: {symbol['name']}")
+            
+            # Strategy configurations
+            enabled_strategies = self.get_enabled_strategies()
+            report_lines.append("\n[STRATEGY CONFIGURATIONS]")
+            for strategy_name in enabled_strategies:
+                strategy_config = self.get_strategy_config(strategy_name)
+                report_lines.append(f"  {strategy_name}:")
+                for key, value in strategy_config.items():
+                    report_lines.append(f"    {key}: {value}")
+            
+            # Risk configuration
+            risk_config = self.get_risk_config()
+            report_lines.append("\n[RISK MANAGEMENT CONFIGURATION]")
+            for key, value in risk_config.items():
+                report_lines.append(f"  {key}: {value}")
+            
+            # Execution configuration
+            execution_config = self.get_execution_config()
+            report_lines.append("\n[EXECUTION CONFIGURATION]")
+            for key, value in execution_config.items():
+                report_lines.append(f"  {key}: {value}")
+            
+            report_lines.append("\n" + "=" * 80)
+            report_lines.append("END CONFIGURATION AUDIT REPORT")
+            report_lines.append("=" * 80)
+            
+            return "\n".join(report_lines)
+            
+        except Exception as e:
+            error_msg = f"Failed to generate configuration audit report: {str(e)}"
+            self.algorithm.Error(f"ERROR: {error_msg}")
+            return f"CONFIGURATION AUDIT FAILED: {error_msg}"

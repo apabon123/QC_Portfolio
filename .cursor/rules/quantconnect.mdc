@@ -1,0 +1,369 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# QuantConnect Three-Layer CTA Framework - Cursor Rules
+
+## 🎯 **CORE PRINCIPLES**
+
+### **1. QC NATIVE FIRST**
+- **ALWAYS** use QuantConnect's built-in functionality before writing custom code
+- Leverage `.Mapped` property for continuous → underlying contract mapping
+- Use QC's `OnSymbolChangedEvents` for rollover handling
+- Prefer QC's `HasData`, `IsTradable`, `Price` properties for validation
+- Use QC's native `History()`, `SetHoldings()`, `MarketOrder()` methods
+
+### **2. CENTRALIZED CONFIGURATION SECURITY** 🚨 **CRITICAL**
+- **ALL** configuration MUST go through `AlgorithmConfigManager` centralized methods
+- **ZERO** direct config dictionary access (`config.get()`, `self.config[...]`)
+- **NO** fallback configurations or default values anywhere
+- **FAIL FAST** on any configuration errors - never trade with wrong parameters
+- **COMPLETE** configuration audit trail on startup
+
+### **3. ZERO HARDCODED VALUES POLICY**
+- **EVERY** parameter must come from validated configuration
+- **NO** literal numbers anywhere in strategy logic
+- **NO** hardcoded dates, times, thresholds, or limits
+- **ALL** component constructors must use `config_manager.get_*_config()` methods
+
+### **4. MODULAR & CLOUD-READY**
+- Keep each file under **64KB** for QC cloud integration
+- Use component-based architecture with clear separation of concerns
+- Each component handles one responsibility (strategies, allocation, risk, execution)
+- Config-driven initialization for all components
+
+---
+
+## 🔒 **MANDATORY CONFIGURATION SECURITY PATTERNS**
+
+### **Centralized Configuration Access** 🚨 **CRITICAL**
+```python
+# ✅ CORRECT - Centralized configuration access
+class KestnerCTAStrategy:
+    def __init__(self, algorithm, config_manager):
+        # Get configuration through centralized manager ONLY
+        self.config = config_manager.get_strategy_config('KestnerCTA')
+        
+        # Validate required parameters exist
+        required_params = ['momentum_lookbacks', 'volatility_lookback_days', 'target_volatility']
+        for param in required_params:
+            if param not in self.config:
+                error_msg = f"Missing required parameter '{param}' in KestnerCTA configuration"
+                algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                raise ValueError(error_msg)
+        
+        # Initialize from validated config
+        self.momentum_lookbacks = self.config['momentum_lookbacks']
+        self.volatility_lookback_days = self.config['volatility_lookback_days']
+        self.target_volatility = self.config['target_volatility']
+
+# ❌ WRONG - Direct config access (SECURITY RISK)
+class BadStrategy:
+    def __init__(self, config):
+        # NEVER DO THIS - bypasses validation
+        self.lookback = config.get('lookback', 32)  # DANGEROUS FALLBACK
+        self.threshold = config.get('threshold', 0.01)  # DANGEROUS FALLBACK
+```
+
+### **Risk Manager Configuration Security**
+```python
+# ✅ CORRECT - Centralized risk configuration
+class LayerThreeRiskManager:
+    def __init__(self, algorithm, config_manager):
+        # Get risk configuration through centralized manager ONLY
+        self.risk_config = config_manager.get_risk_config()
+        
+        # All parameters from validated config
+        self.target_portfolio_vol = self.risk_config['target_portfolio_vol']
+        self.max_leverage_multiplier = self.risk_config['max_leverage_multiplier']
+        self.daily_stop_loss = self.risk_config['daily_stop_loss']
+
+# ❌ WRONG - Direct config access (SECURITY RISK)
+class BadRiskManager:
+    def __init__(self, config):
+        # NEVER DO THIS - could trade with wrong risk parameters
+        self.target_vol = config.get('target_vol', 0.2)  # DANGEROUS
+        self.max_leverage = config.get('max_leverage', 10)  # DANGEROUS
+```
+
+### **Configuration Validation Pattern** 🚨 **MANDATORY**
+```python
+# ✅ CORRECT - Complete configuration validation
+class AlgorithmConfigManager:
+    def validate_complete_configuration(self) -> bool:
+        """Validate ALL configuration before trading begins."""
+        try:
+            # Validate algorithm config
+            algo_config = self.get_algorithm_config()
+            
+            # Validate universe config
+            universe_config = self.get_universe_config()
+            total_symbols = sum(len(symbols) for symbols in universe_config.values())
+            if total_symbols == 0:
+                raise ValueError("No symbols found in universe configuration")
+            
+            # Validate enabled strategies
+            enabled_strategies = self.get_enabled_strategies()
+            for strategy_name in enabled_strategies:
+                strategy_config = self.get_strategy_config(strategy_name)
+            
+            # Validate risk config
+            risk_config = self.get_risk_config()
+            
+            # Validate execution config
+            execution_config = self.get_execution_config()
+            
+            self.algorithm.Log("✅ ALL CONFIGURATION VALIDATED SUCCESSFULLY")
+            return True
+            
+        except Exception as e:
+            error_msg = f"CONFIGURATION VALIDATION FAILED: {str(e)}"
+            self.algorithm.Error(f"CRITICAL ERROR: {error_msg}")
+            self.algorithm.Error("STOPPING ALGORITHM: Cannot trade with invalid configuration")
+            raise ValueError(error_msg)
+
+# ❌ WRONG - No validation (SECURITY RISK)
+def bad_initialization():
+    # NEVER DO THIS - could trade with invalid config
+    config = load_config()  # No validation
+    strategy = Strategy(config)  # Could have wrong parameters
+```
+
+---
+
+## 🏗️ **UPDATED PROJECT ARCHITECTURE**
+
+### **Current Project Structure**
+```
+CTA Replication/
+├── main.py                          # QC Algorithm entry point
+├── config.json                      # Master configuration file
+├── CONFIGURATION_AUDIT.md           # Security audit documentation
+├── src/
+│   ├── config/                      # Configuration management (SEPARATED)
+│   │   ├── algorithm_config_manager.py     # Centralized config manager
+│   │   ├── config.py                       # Configuration definitions
+│   │   └── config_market_strategy.py       # Market strategy configs
+│   ├── components/                  # Core system components
+│   │   ├── three_layer_orchestrator.py     # Layer coordination
+│   │   ├── portfolio_execution_manager.py  # Order execution
+│   │   ├── system_reporter.py              # Performance reporting
+│   │   ├── universe.py                     # Universe management
+│   │   ├── data_integrity_checker.py       # Data validation
+│   │   └── qc_native_contract_resolver.py  # QC native contract handling
+│   ├── strategies/                  # Layer 1: Strategy implementations
+│   │   ├── base_strategy.py                # Strategy base class
+│   │   ├── kestner_cta_strategy.py         # Kestner momentum strategy
+│   │   ├── mtum_cta_strategy.py            # MTUM strategy
+│   │   └── hmm_cta_strategy.py             # HMM regime strategy
+│   ├── risk/                        # Layer 3: Portfolio risk management
+│   │   ├── layer_three_risk_manager.py     # Portfolio-level risk
+│   │   └── portfolio_risk_manager.py       # Risk management utilities
+│   └── utils/                       # Utility functions
+│       ├── universe_helpers.py             # Universe utilities
+│       ├── futures_helpers.py              # Futures utilities
+│       └── qc_helpers.py                   # QC-specific utilities
+└── docs/                            # Documentation
+    ├── TECHNICAL.md
+    ├── QC_INTEGRATION_STANDARDS.md
+    └── OPTIMIZATION_SUMMARY.md
+```
+
+### **Three-Layer Pattern with Centralized Config**
+```python
+# Layer 1: Strategy Signal Generation (centralized config)
+class LayerOneStrategy:
+    def __init__(self, algorithm, config_manager, strategy_name):
+        # Get strategy config through centralized manager ONLY
+        self.config = config_manager.get_strategy_config(strategy_name)
+        
+    def generate_raw_signals(self, slice: Slice) -> dict:
+        """Generate raw position targets without risk management"""
+        pass
+
+# Layer 2: Dynamic Allocation (centralized config)
+class LayerTwoAllocator:
+    def __init__(self, algorithm, config_manager):
+        # Get allocation config through centralized manager ONLY
+        self.config = config_manager.get_allocation_config()
+        
+    def combine_strategies(self, strategy_targets: dict) -> dict:
+        """Combine multiple strategy signals"""
+        pass
+
+# Layer 3: Portfolio Risk Management (centralized config)
+class LayerThreeRiskManager:
+    def __init__(self, algorithm, config_manager):
+        # Get risk config through centralized manager ONLY
+        self.config = config_manager.get_risk_config()
+        
+    def apply_portfolio_risk(self, combined_targets: dict) -> dict:
+        """Apply portfolio-level risk management"""
+        pass
+```
+
+---
+
+## 🔒 **CENTRALIZED CONFIGURATION METHODS**
+
+### **Required Configuration Access Methods**
+```python
+# All components MUST use these methods for configuration access
+config_manager.get_strategy_config(strategy_name)    # Strategy configurations
+config_manager.get_risk_config()                     # Risk management parameters
+config_manager.get_execution_config()                # Execution parameters
+config_manager.get_data_integrity_config()           # Data validation parameters
+config_manager.get_algorithm_config()                # Algorithm settings
+config_manager.get_universe_config()                 # Universe definitions
+config_manager.validate_complete_configuration()     # Startup validation
+config_manager.get_config_audit_report()             # Audit trail
+```
+
+### **Algorithm Initialization with Security**
+```python
+# ✅ CORRECT - Secure algorithm initialization
+class ThreeLayerCTAAlgorithm(QCAlgorithm):
+    def Initialize(self):
+        # STEP 1: Initialize configuration management FIRST
+        self.config_manager = AlgorithmConfigManager(self)
+        self.config = self.config_manager.load_and_validate_config(variant="full")
+        
+        # STEP 2: CRITICAL - Validate complete configuration
+        self.config_manager.validate_complete_configuration()
+        
+        # STEP 3: Generate and log configuration audit report
+        audit_report = self.config_manager.get_config_audit_report()
+        # Log audit report for security verification
+        
+        # STEP 4: Initialize QC native features from validated config
+        algo_config = self.config_manager.get_algorithm_config()
+        self.SetStartDate(algo_config['start_date']['year'], 
+                         algo_config['start_date']['month'], 
+                         algo_config['start_date']['day'])
+        self.SetCash(algo_config['initial_cash'])
+        
+        # STEP 5: Initialize components with centralized config
+        self.orchestrator = ThreeLayerOrchestrator(self, self.config_manager)
+        self.execution_manager = PortfolioExecutionManager(self, self.config_manager)
+
+# ❌ WRONG - Insecure initialization
+def bad_initialize(self):
+    # NEVER DO THIS - no validation, could trade with wrong parameters
+    self.SetStartDate(2020, 1, 1)  # HARDCODED
+    self.SetCash(1000000)  # HARDCODED
+    config = {'some': 'config'}  # NO VALIDATION
+    strategy = Strategy(config)  # DANGEROUS
+```
+
+---
+
+## 🚨 **CRITICAL SECURITY REQUIREMENTS**
+
+### **MANDATORY SECURITY RULES**
+1. **NO fallback configurations anywhere** - Algorithm stops if config is invalid
+2. **NO direct config dictionary access** - All through centralized methods
+3. **NO hardcoded trading parameters** - Everything from validated config
+4. **FAIL FAST on configuration errors** - Never trade with wrong parameters
+5. **COMPLETE configuration audit on startup** - Know exactly what's being used
+6. **NO silent defaults** - All required parameters must be explicitly configured
+
+### **FORBIDDEN PATTERNS** ❌
+```python
+# ❌ NEVER DO THESE - SECURITY RISKS
+config.get('parameter', default_value)              # Dangerous fallback
+self.config['parameter']                             # Direct access
+if 'parameter' not in config: config['parameter'] = default  # Silent default
+try: param = config['param'] except: param = default        # Hidden fallback
+
+# ❌ NEVER CREATE FALLBACK CONFIGURATIONS
+def _load_fallback_config(self):                     # FORBIDDEN
+    return {'default': 'values'}                     # DANGEROUS
+
+# ❌ NEVER USE EMERGENCY FALLBACKS IN PRODUCTION
+except ImportError:                                  # FORBIDDEN IN PRODUCTION
+    config = {'fallback': 'config'}                 # DANGEROUS FOR TRADING
+```
+
+### **REQUIRED PATTERNS** ✅
+```python
+# ✅ ALWAYS DO THESE - SECURE PATTERNS
+strategy_config = config_manager.get_strategy_config('KestnerCTA')  # Centralized
+if 'parameter' not in strategy_config:                              # Explicit validation
+    raise ValueError(f"Missing required parameter: parameter")      # Fail fast
+param = strategy_config['parameter']                                # Validated access
+```
+
+---
+
+## 📊 **QC NATIVE DATA ACCESS WITH SECURITY**
+
+### **Secure Data Access Pattern**
+```python
+# ✅ CORRECT - QC native with centralized config
+def get_historical_data(self, symbol, config_manager) -> pd.DataFrame:
+    """Use QC's native History with centralized config"""
+    # Get data config through centralized manager
+    algo_config = config_manager.get_algorithm_config()
+    
+    periods = algo_config['history_periods']
+    resolution = getattr(Resolution, algo_config['resolution'])
+    
+    # Use QC's native History method
+    history = self.algorithm.History(symbol, periods, resolution)
+    return history if not history.empty else None
+
+# ❌ WRONG - Hardcoded or fallback values
+def bad_historical_data(self, symbol):
+    # NEVER DO THIS - hardcoded parameters
+    history = self.algorithm.History(symbol, 252, Resolution.Daily)  # HARDCODED
+    return history
+```
+
+---
+
+## ⚠️ **CRITICAL SECURITY REMINDERS**
+
+### **NEVER DO (SECURITY RISKS):**
+- ❌ **Use fallback configurations** - Could trade with wrong parameters
+- ❌ **Access config dictionaries directly** - Bypasses validation
+- ❌ **Use default values in .get() calls** - Silent parameter changes
+- ❌ **Create emergency fallbacks** - Could mask configuration errors
+- ❌ **Hardcode ANY trading parameters** - Impossible to audit
+- ❌ **Continue trading with invalid config** - Financial risk
+
+### **ALWAYS DO (SECURITY REQUIREMENTS):**
+- ✅ **Use centralized config methods** - `config_manager.get_*_config()`
+- ✅ **Validate all required parameters** - Explicit checks
+- ✅ **Fail fast on config errors** - Stop algorithm immediately
+- ✅ **Generate configuration audit trail** - Know what's being used
+- ✅ **Test with invalid configs** - Ensure proper error handling
+- ✅ **Review audit reports** - Verify expected configuration
+
+### **CONFIGURATION SECURITY PRIORITY:**
+1. **Centralized validation** - All config through `AlgorithmConfigManager`
+2. **Explicit parameter checks** - No silent defaults or fallbacks
+3. **Fail-fast behavior** - Stop immediately on configuration errors
+4. **Complete audit trail** - Log all configuration values used
+5. **Security testing** - Test with invalid/missing configurations
+
+---
+
+## 🛡️ **DEPLOYMENT SECURITY CHECKLIST**
+
+### **Before Every Deployment:**
+- [ ] All components use centralized configuration methods
+- [ ] No direct config dictionary access anywhere
+- [ ] No fallback configurations or default values
+- [ ] Configuration validation passes completely
+- [ ] Audit report shows expected configuration
+- [ ] Invalid configuration testing completed
+- [ ] No hardcoded trading parameters exist
+
+### **Runtime Security Monitoring:**
+- [ ] Configuration audit report generated on startup
+- [ ] All configuration errors stop algorithm execution
+- [ ] No fallback logic can be triggered
+- [ ] All trading parameters come from validated config
+
+This framework ensures **MAXIMUM SECURITY** for live trading by eliminating all dangerous configuration patterns and enforcing centralized, validated configuration management.

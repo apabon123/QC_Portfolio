@@ -138,11 +138,11 @@ class StrategyLoader:
             strategy_class = getattr(strategy_module, class_name)
             
             # Create strategy instance with CONFIG-COMPLIANT approach
+            # BaseStrategy constructor expects: (algorithm, config_manager, strategy_name)
             strategy_instance = strategy_class(
                 algorithm=self.algorithm,
-                futures_manager=self.algorithm.futures_manager,
-                name=strategy_name,
-                config_manager=self.config_manager  # ← CONFIG-COMPLIANT
+                config_manager=self.config_manager,
+                strategy_name=strategy_name
             )
             
             # Store strategy and metadata

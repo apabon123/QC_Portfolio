@@ -1,97 +1,84 @@
-# mtum_cta_strategy.py - Optimized for size
+# mtum_cta_strategy.py - INHERITS FROM BASE STRATEGY
 
 from AlgorithmImports import *
 import numpy as np
 from collections import deque
+from strategies.base_strategy import BaseStrategy
 
-class MTUMCTAStrategy:
-    """MTUM CTA Strategy - Futures Adaptation of MSCI USA Momentum - Optimized Version"""
+class MTUMCTAStrategy(BaseStrategy):
+    """
+    MTUM CTA Strategy Implementation
+    CRITICAL: All configuration comes through centralized config manager only
+    """
     
-    def __init__(self, algorithm, futures_manager, name="MTUM_CTA", config_manager=None):
-        self.algorithm = algorithm
-        self.futures_manager = futures_manager
-        self.name = name
-        self.config_manager = config_manager
+    def __init__(self, algorithm, config_manager, strategy_name):
+        """
+        Initialize MTUM CTA strategy with centralized configuration.
+        CRITICAL: NO fallback logic - fail fast if config is invalid.
+        """
+        # Initialize base strategy with centralized config
+        super().__init__(algorithm, config_manager, strategy_name)
         
-        self._load_configuration()
-        
-        # Initialize symbol data for momentum/volatility calculations
-        self.symbol_data = {}
-        
-        # Strategy state
-        self.current_targets = {}
-        self.last_rebalance_date = None
-        self.strategy_returns = []
-        self.portfolio_values = []
-        self.last_update_time = None
-        
-        # Performance tracking
-        self.trades_executed = 0
-        self.total_rebalances = 0
-        self.gross_exposure_history = []
-        self.momentum_score_history = {}
-        
-        self._log_initialization_summary()
-    
-    def _load_configuration(self):
-        """Load configuration from config_manager with fallback handling."""
         try:
-            if self.config_manager:
-                strategy_config = self.config_manager.get_strategy_config(self.name)
-                if strategy_config:
-                    self._build_config_dict(strategy_config)
-                    self.algorithm.Log(f"{self.name}: Config loaded from config_manager")
-                    return
-            
-            self.algorithm.Log(f"{self.name}: Using fallback configuration")
-            self._load_fallback_config()
+            # All configuration comes from centralized manager
+            self._initialize_strategy_components()
+            self.algorithm.Log(f"MTUMCTA: Strategy initialized successfully")
             
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Config loading error: {str(e)}")
-            self._load_fallback_config()
+            error_msg = f"CRITICAL ERROR initializing MTUMCTA: {str(e)}"
+            self.algorithm.Error(error_msg)
+            raise ValueError(error_msg)
     
-    def _build_config_dict(self, config):
-        """Build complete config dictionary from provided config."""
-        self.config_dict = {
-            'momentum_lookbacks_months': config.get('momentum_lookbacks_months', [6, 12]),
-            'volatility_lookback_days': config.get('volatility_lookback_days', 252 * 3),
-            'recent_exclusion_days': config.get('recent_exclusion_days', 22),
-            'signal_standardization_clip': config.get('signal_standardization_clip', 3.0),
-            'target_volatility': config.get('target_volatility', 0.2),
-            'rebalance_frequency': config.get('rebalance_frequency', 'monthly'),
-            'max_position_weight': config.get('max_position_weight', 0.5),
-            'risk_free_rate': config.get('risk_free_rate', 0.02),
-            'warmup_days': config.get('warmup_days', 400),
-            'long_short_enabled': config.get('long_short_enabled', True),
-            'min_weight_threshold': config.get('min_weight_threshold', 0.01),
-            'min_trade_value': config.get('min_trade_value', 1000),
-            'max_single_order_value': config.get('max_single_order_value', 50000000),
-            'max_leverage_multiplier': config.get('max_leverage_multiplier', 100),
-            'max_single_position': config.get('max_single_position', 10.0),
-            'daily_stop_loss': config.get('daily_stop_loss', 0.2),
-            'enabled': config.get('enabled', True),
-            'description': config.get('description', 'MTUM CTA Strategy'),
-            'expected_sharpe': config.get('expected_sharpe', 0.6),
-            'correlation_with_momentum': config.get('correlation_with_momentum', 0.7)
-        }
+    def _initialize_strategy_components(self):
+        """Initialize MTUM-specific components using centralized configuration."""
+        try:
+            # Validate required configuration parameters
+            required_params = [
+                'momentum_lookbacks_months', 'volatility_lookback_days', 'target_volatility',
+                'max_position_weight', 'warmup_days', 'enabled'
+            ]
+            
+            for param in required_params:
+                if param not in self.config:
+                    error_msg = f"Missing required parameter '{param}' in MTUMCTA configuration"
+                    self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
+                    raise ValueError(error_msg)
+            
+            # Initialize strategy parameters from validated config
+            self.momentum_lookbacks_months = self.config['momentum_lookbacks_months']
+            self.volatility_lookback_days = self.config['volatility_lookback_days']
+            self.target_volatility = self.config['target_volatility']
+            self.max_position_weight = self.config['max_position_weight']
+            self.warmup_days = self.config['warmup_days']
+            self.recent_exclusion_days = self.config.get('recent_exclusion_days', 22)
+            self.signal_standardization_clip = self.config.get('signal_standardization_clip', 3.0)
+            
+            # Initialize tracking variables
+            self.symbol_data = {}
+            self.current_targets = {}
+            self.last_rebalance_date = None
+            self.last_update_time = None
+            
+            # Performance tracking
+            self.trades_executed = 0
+            self.total_rebalances = 0
+            self.strategy_returns = []
+            
+            self.algorithm.Log(f"MTUMCTA: Initialized with momentum lookbacks {self.momentum_lookbacks_months}, "
+                             f"target volatility {self.target_volatility:.1%}")
+            
+        except Exception as e:
+            error_msg = f"Failed to initialize MTUMCTA components: {str(e)}"
+            self.algorithm.Error(f"CRITICAL ERROR: {error_msg}")
+            raise ValueError(error_msg)
     
-    def _load_fallback_config(self):
-        """Load fallback configuration if config_manager is unavailable."""
-        self.config_dict = {
-            'momentum_lookbacks_months': [6, 12], 'volatility_lookback_days': 252 * 3,
-            'recent_exclusion_days': 22, 'signal_standardization_clip': 3.0, 'target_volatility': 0.2,
-            'rebalance_frequency': 'monthly', 'max_position_weight': 0.5, 'risk_free_rate': 0.02,
-            'warmup_days': 400, 'long_short_enabled': True, 'min_weight_threshold': 0.01,
-            'min_trade_value': 1000, 'max_single_order_value': 50000000, 'max_leverage_multiplier': 100,
-            'max_single_position': 10.0, 'daily_stop_loss': 0.2, 'enabled': True,
-            'description': 'MTUM CTA Strategy (Fallback Config)', 'expected_sharpe': 0.6,
-            'correlation_with_momentum': 0.7
-        }
+    # REMOVED: All fallback configuration logic
+    # All configuration MUST come through the centralized config manager
     
     def _log_initialization_summary(self):
         """Log initialization summary."""
-        self.algorithm.Log(f"{self.name}: Initialized with {self.config_dict['momentum_lookbacks_months']} month lookbacks, "
-                          f"{self.config_dict['target_volatility']:.1%} vol target")
+        self.algorithm.Log(f"{self.name}: Initialized with {self.config['momentum_lookbacks_months']} month lookbacks, "
+                          f"{self.config['target_volatility']:.1%} vol target")
     
     def initialize_symbol_data(self):
         """Initialize SymbolData objects for all futures in the manager"""
@@ -102,13 +89,7 @@ class MTUMCTAStrategy:
                 symbols = ['ES', 'NQ', 'ZN']
             
             for symbol in symbols:
-                self.symbol_data[symbol] = self.SymbolData(
-                    algorithm=self.algorithm,
-                    symbol=symbol,
-                    lookbackMonthsList=self.config_dict['momentum_lookbacks_months'],
-                    volLookbackDays=self.config_dict['volatility_lookback_days'],
-                    recent_exclusion_days=self.config_dict['recent_exclusion_days']
-                )
+                self.symbol_data[symbol] = self._create_symbol_data(symbol)
                 
                 self.momentum_score_history[symbol] = deque(maxlen=252)
         
@@ -220,75 +201,61 @@ class MTUMCTAStrategy:
             return False
     
     def should_rebalance(self, current_time):
-        """Check if strategy should rebalance."""
-        if not self.last_rebalance_date:
+        """Determine if strategy should rebalance (monthly)."""
+        if self.last_rebalance_date is None:
             return True
         
-        if self.config_dict['rebalance_frequency'] == 'monthly':
-            return current_time.month != self.last_rebalance_date.month
-        elif self.config_dict['rebalance_frequency'] == 'weekly':
-            days_since = (current_time.date() - self.last_rebalance_date).days
-            return days_since >= 7
-        
-        return False
+        # Rebalance monthly on the first trading day
+        return (current_time.month != self.last_rebalance_date.month and
+                current_time.day <= 5)  # First 5 days of month
     
     def generate_signals(self):
-        """Generate momentum-based trading signals."""
+        """Generate MTUM momentum signals across all liquid symbols."""
         try:
             signals = {}
             liquid_symbols = self._get_liquid_symbols()
             
             if not liquid_symbols:
+                self.algorithm.Log(f"{self.name}: No liquid symbols for signal generation")
                 return signals
             
             # Calculate momentum scores for all symbols
             momentum_scores = {}
             for symbol in liquid_symbols:
-                if symbol not in self.symbol_data or not self.symbol_data[symbol].IsReady:
+                if symbol not in self.symbol_data:
+                    continue
+                
+                symbol_data = self.symbol_data[symbol]
+                if not symbol_data.IsReady:
                     continue
                 
                 try:
-                    symbol_data = self.symbol_data[symbol]
+                    # Calculate total return momentum (excluding recent period)
+                    total_momentum = 0
+                    valid_lookbacks = 0
                     
-                    # Calculate risk-adjusted momentum for each lookback period
-                    total_score = 0.0
-                    valid_scores = 0
+                    for lookback_months in self.config['momentum_lookbacks_months']:
+                        momentum = symbol_data.GetTotalReturn(lookback_months)
+                        if momentum is not None:
+                            total_momentum += momentum
+                            valid_lookbacks += 1
                     
-                    for lookback_months in self.config_dict['momentum_lookbacks_months']:
-                        total_return = symbol_data.GetTotalReturn(lookback_months)
-                        volatility = symbol_data.GetVolatility(lookback_months)
+                    if valid_lookbacks > 0:
+                        avg_momentum = total_momentum / valid_lookbacks
+                        momentum_scores[symbol] = avg_momentum
                         
-                        if total_return is not None and volatility > 0:
-                            # Risk-adjusted momentum = (total_return - risk_free) / volatility
-                            risk_free_return = self.config_dict['risk_free_rate'] * (lookback_months / 12.0)
-                            excess_return = total_return - risk_free_return
-                            risk_adjusted_score = excess_return / volatility
-                            
-                            total_score += risk_adjusted_score
-                            valid_scores += 1
-                    
-                    if valid_scores > 0:
-                        momentum_scores[symbol] = total_score / valid_scores
-                        
-                        # Track momentum score history
-                        if symbol in self.momentum_score_history:
-                            self.momentum_score_history[symbol].append(momentum_scores[symbol])
-                
                 except Exception as e:
-                    self.algorithm.Error(f"{self.name}: Error calculating momentum for {symbol}: {str(e)}")
+                    self.algorithm.Error(f"{self.name}: Error processing {symbol}: {str(e)}")
                     continue
             
-            if not momentum_scores:
-                return signals
+            if momentum_scores:
+                # Standardize scores
+                standardized_scores = self._standardize_scores(momentum_scores)
+                
+                # Convert to position weights
+                signals = self._convert_scores_to_weights(standardized_scores)
             
-            # Standardize scores
-            standardized_scores = self._standardize_scores(momentum_scores, 
-                                                         self.config_dict['signal_standardization_clip'])
-            
-            # Convert to position weights
-            position_weights = self._convert_scores_to_weights(standardized_scores)
-            
-            return position_weights
+            return signals
             
         except Exception as e:
             self.algorithm.Error(f"{self.name}: Error generating signals: {str(e)}")
@@ -300,64 +267,68 @@ class MTUMCTAStrategy:
             return self.futures_manager.get_liquid_symbols()
         return list(self.symbol_data.keys())
     
-    def _standardize_scores(self, scores, clip_at=3.0):
+    def _standardize_scores(self, scores, clip_at=None):
         """Standardize momentum scores using z-score normalization."""
+        if not scores:
+            return {}
+        
+        if clip_at is None:
+            clip_at = self.config['signal_standardization_clip']
+        
         try:
-            if not scores:
-                return scores
+            values = list(scores.values())
+            mean_val = np.mean(values)
+            std_val = np.std(values)
             
-            score_values = list(scores.values())
-            mean_score = np.mean(score_values)
-            std_score = np.std(score_values)
-            
-            if std_score == 0:
-                return {symbol: 0.0 for symbol in scores.keys()}
+            if std_val <= 0:
+                return {symbol: 0.0 for symbol in scores}
             
             standardized = {}
             for symbol, score in scores.items():
-                z_score = (score - mean_score) / std_score
-                clipped_score = np.clip(z_score, -clip_at, clip_at)
+                z_score = (score - mean_val) / std_val
+                # Clip extreme values
+                clipped_score = max(-clip_at, min(clip_at, z_score))
                 standardized[symbol] = clipped_score
             
             return standardized
             
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error standardizing scores: {str(e)}")
-            return scores
+            self.algorithm.Error(f"{self.name}: Score standardization error: {str(e)}")
+            return {}
     
     def _convert_scores_to_weights(self, scores):
         """Convert standardized scores to position weights."""
+        if not scores:
+            return {}
+        
         try:
-            if not scores:
-                return {}
-            
             weights = {}
             
-            if self.config_dict['long_short_enabled']:
-                # Long/short: use scores directly as weights
+            if self.config['long_short_enabled']:
+                # Long-short strategy
                 for symbol, score in scores.items():
-                    weights[symbol] = score / len(scores)  # Normalize by number of assets
+                    # Convert score to weight (normalized by number of positions)
+                    weight = score / len(scores)
+                    weights[symbol] = weight
             else:
-                # Long-only: only positive scores
+                # Long-only strategy
                 positive_scores = {s: max(0, score) for s, score in scores.items()}
                 total_positive = sum(positive_scores.values())
                 
                 if total_positive > 0:
                     for symbol, score in positive_scores.items():
                         weights[symbol] = score / total_positive
-                else:
-                    weights = {symbol: 0.0 for symbol in scores.keys()}
             
             return weights
             
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error converting scores to weights: {str(e)}")
+            self.algorithm.Error(f"{self.name}: Weight conversion error: {str(e)}")
             return {}
     
     def _apply_position_limits(self, weights):
         """Apply individual position size limits."""
         limited_weights = {}
-        max_weight = self.config_dict['max_position_weight']
+        max_weight = self.config['max_position_weight']
         
         for symbol, weight in weights.items():
             limited_weights[symbol] = max(-max_weight, min(max_weight, weight))
@@ -372,11 +343,11 @@ class MTUMCTAStrategy:
             
             # Calculate portfolio volatility
             portfolio_vol = self._calculate_portfolio_volatility(weights)
-            target_vol = self.config_dict['target_volatility']
+            target_vol = self.config['target_volatility']
             
             if portfolio_vol > 0:
                 vol_scalar = target_vol / portfolio_vol
-                vol_scalar = min(vol_scalar, self.config_dict['max_leverage_multiplier'])
+                vol_scalar = min(vol_scalar, self.config['max_leverage_multiplier'])
                 
                 scaled_weights = {}
                 for symbol, weight in weights.items():
@@ -393,7 +364,7 @@ class MTUMCTAStrategy:
     def _validate_trade_sizes(self, targets):
         """Validate and filter trade sizes."""
         validated_targets = {}
-        min_threshold = self.config_dict['min_weight_threshold']
+        min_threshold = self.config['min_weight_threshold']
         
         for symbol, weight in targets.items():
             if abs(weight) >= min_threshold:
@@ -442,14 +413,14 @@ class MTUMCTAStrategy:
             
             for symbol, target_weight in new_targets.items():
                 try:
-                    if abs(target_weight) < self.config_dict['min_weight_threshold']:
+                    if abs(target_weight) < self.config['min_weight_threshold']:
                         continue
                     
                     # Calculate position size
                     portfolio_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
                     target_value = target_weight * portfolio_value
                     
-                    if abs(target_value) < self.config_dict['min_trade_value']:
+                    if abs(target_value) < self.config['min_trade_value']:
                         continue
                     
                     # Get current position
@@ -503,7 +474,7 @@ class MTUMCTAStrategy:
                 'avg_gross_exposure': np.mean(self.gross_exposure_history) if self.gross_exposure_history else 0.0,
                 'strategy_name': self.name,
                 'last_update': self.last_update_time,
-                'config_description': self.config_dict.get('description', 'MTUM CTA Strategy')
+                'config_description': self.config.get('description', 'MTUM CTA Strategy')
             }
         except Exception as e:
             self.algorithm.Error(f"{self.name}: Error getting performance metrics: {str(e)}")
@@ -523,190 +494,203 @@ class MTUMCTAStrategy:
         try:
             return {
                 'strategy_name': self.name,
-                'enabled': self.config_dict.get('enabled', True),
-                'rebalance_frequency': self.config_dict.get('rebalance_frequency', 'monthly'),
-                'target_volatility': self.config_dict.get('target_volatility', 0.2),
-                'max_position_weight': self.config_dict.get('max_position_weight', 0.5),
-                'momentum_lookbacks': self.config_dict.get('momentum_lookbacks_months', [6, 12]),
-                'long_short_enabled': self.config_dict.get('long_short_enabled', True),
-                'description': self.config_dict.get('description', 'MTUM CTA Strategy'),
+                'enabled': self.config.get('enabled', True),
+                'rebalance_frequency': self.config.get('rebalance_frequency', 'monthly'),
+                'target_volatility': self.config.get('target_volatility', 0.2),
+                'max_position_weight': self.config.get('max_position_weight', 0.5),
+                'momentum_lookbacks': self.config.get('momentum_lookbacks_months', [6, 12]),
+                'long_short_enabled': self.config.get('long_short_enabled', True),
+                'description': self.config.get('description', 'MTUM CTA Strategy'),
                 'config_source': 'config_manager' if self.config_manager else 'fallback'
             }
         except Exception as e:
             return {'strategy_name': self.name, 'error': str(e)}
 
+    def _create_symbol_data(self, symbol):
+        """Create MTUM-specific symbol data object."""
+        return self.SymbolData(
+            algorithm=self.algorithm,
+            symbol=symbol,
+            lookbackMonthsList=self.config['momentum_lookbacks_months'],
+            volLookbackDays=self.config['volatility_lookback_days'],
+            recent_exclusion_days=self.config['recent_exclusion_days']
+        )
+
     class SymbolData:
-        """Optimized SymbolData class for momentum analysis."""
-        
+        """MTUM-specific SymbolData for momentum calculations."""
+
         def __init__(self, algorithm, symbol, lookbackMonthsList, volLookbackDays, recent_exclusion_days=22):
             self.algorithm = algorithm
             self.symbol = symbol
             self.lookbackMonthsList = lookbackMonthsList
             self.volLookbackDays = volLookbackDays
             self.recent_exclusion_days = recent_exclusion_days
-            
-            # Data storage
-            self.daily_prices = deque(maxlen=volLookbackDays + 100)
+
+            # Rolling windows
+            max_lookback_days = max(lookbackMonthsList) * 22 + volLookbackDays + 50  # 22 trading days/month
+            self.price_window = RollingWindow[float](max_lookback_days)
             self.monthly_prices = deque(maxlen=max(lookbackMonthsList) + 5)
-            self.daily_returns = deque(maxlen=volLookbackDays)
             
-            # Data quality tracking
-            self.data_quality_score = 0.0
-            self.consecutive_valid_days = 0
-            self.total_data_points = 0
-            
+            # Track data quality
+            self.data_points_received = 0
+            self.last_update_time = None
+            self.has_sufficient_data = True
+            self.data_availability_error = None
+
+            # Setup consolidator
+            try:
+                self.consolidator = TradeBarConsolidator(timedelta(days=1))
+                self.consolidator.DataConsolidated += self.OnDataConsolidated
+                algorithm.SubscriptionManager.AddConsolidator(symbol, self.consolidator)
+            except Exception as e:
+                algorithm.Log(f"MTUM SymbolData {symbol}: Consolidator setup error: {str(e)}")
+
+            # Initialize with history
             self._initialize_with_history()
-        
+
         def _initialize_with_history(self):
-            """Initialize with historical data."""
+            """Initialize with historical data using CENTRALIZED data provider."""
             try:
                 history_days = self.volLookbackDays + 100
-                history = self.algorithm.History(self.symbol, history_days, Resolution.Daily)
                 
-                if history.empty:
+                # Use centralized data provider if available
+                if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
+                    history = self.algorithm.data_integrity_checker.get_history(self.symbol, history_days, Resolution.Daily)
+                else:
+                    # Fallback to direct API call (not recommended)
+                    self.algorithm.Log(f"MTUM SymbolData {self.symbol}: WARNING - No centralized cache, using direct History API")
+                    history = self.algorithm.History(self.symbol, history_days, Resolution.Daily)
+                
+                if history is None or history.empty:
                     self.algorithm.Log(f"No history available for {self.symbol}")
+                    self.has_sufficient_data = False
+                    self.data_availability_error = "No historical data available"
                     return
                 
                 # Process historical data
-                for time, row in history.iterrows():
-                    if hasattr(row, 'close') and row.close > 0:
-                        self.daily_prices.append(float(row.close))
-                        self.total_data_points += 1
-                
-                # Calculate returns
-                if len(self.daily_prices) > 1:
-                    for i in range(1, len(self.daily_prices)):
-                        ret = (self.daily_prices[i] / self.daily_prices[i-1]) - 1
-                        self.daily_returns.append(ret)
-                
-                self._update_monthly_prices()
-                self._update_data_quality()
-                
-                self.algorithm.Log(f"{self.symbol}: Initialized with {len(self.daily_prices)} prices")
-                
-            except Exception as e:
-                self.algorithm.Error(f"Error initializing {self.symbol}: {str(e)}")
-        
-        @property
-        def IsReady(self):
-            """Check if symbol data is ready for analysis."""
-            min_days_needed = max(self.lookbackMonthsList) * 22 + self.recent_exclusion_days + 50
-            return (len(self.daily_prices) >= min_days_needed and 
-                   len(self.monthly_prices) >= max(self.lookbackMonthsList) and
-                   self.data_quality_score > 0.7)
-        
-        def OnDataConsolidated(self, sender, bar: TradeBar):
-            """Process new bar data."""
-            try:
-                if bar.Close <= 0:
-                    return
-                
-                # Add new price
-                self.daily_prices.append(float(bar.Close))
-                self.total_data_points += 1
-                
-                # Calculate return
-                if len(self.daily_prices) > 1:
-                    ret = (self.daily_prices[-1] / self.daily_prices[-2]) - 1
-                    self.daily_returns.append(ret)
-                    self.consecutive_valid_days += 1
+                for index, row in history.iterrows():
+                    close_price = row['close']
+                    self.price_window.Add(close_price)
+                    self.data_points_received += 1
                 
                 # Update monthly prices
                 self._update_monthly_prices()
-                self._update_data_quality()
                 
+                self.algorithm.Log(f"MTUM SymbolData {self.symbol}: Initialized with {len(history)} bars")
+
             except Exception as e:
-                self.algorithm.Error(f"Error processing bar for {self.symbol}: {str(e)}")
-        
-        def _update_monthly_prices(self):
-            """Update monthly price sampling."""
-            if len(self.daily_prices) < 22:
+                self.algorithm.Error(f"MTUM SymbolData {self.symbol}: History initialization error: {str(e)}")
+                self.has_sufficient_data = False
+                self.data_availability_error = f"History error: {str(e)}"
+
+        @property
+        def IsReady(self):
+            """Check if symbol data is ready for calculations."""
+            if not self.has_sufficient_data:
+                return False
+            
+            min_data_points = max(self.lookbackMonthsList) * 22 + self.recent_exclusion_days + 10
+            return (self.price_window.Count >= min_data_points and 
+                   len(self.monthly_prices) >= max(self.lookbackMonthsList))
+
+        def OnDataConsolidated(self, sender, bar: TradeBar):
+            """Process new daily bar."""
+            if bar is None or bar.Close <= 0:
                 return
             
-            # Sample prices every ~22 trading days for monthly calculation
-            if len(self.daily_prices) % 22 == 0:
-                self.monthly_prices.append(self.daily_prices[-1])
-        
-        def GetTotalReturn(self, lookbackMonths):
-            """Calculate total return over specified months."""
             try:
-                if len(self.monthly_prices) < lookbackMonths + 1:
-                    return None
+                self.price_window.Add(float(bar.Close))
+                self.data_points_received += 1
+                self.last_update_time = bar.Time
                 
-                # Get prices from lookbackMonths ago and current
-                start_price = self.monthly_prices[-(lookbackMonths + 1)]
-                end_price = self.monthly_prices[-1]
-                
-                if start_price > 0:
-                    # Exclude recent period
-                    if len(self.daily_prices) >= self.recent_exclusion_days:
-                        excluded_price = self.daily_prices[-self.recent_exclusion_days]
-                        if excluded_price > 0:
-                            end_price = excluded_price
-                    
-                    return (end_price / start_price) - 1.0
-                
-                return None
+                # Update monthly prices on month-end
+                if bar.Time.day >= 25:  # Approximate month-end
+                    self._update_monthly_prices()
                 
             except Exception as e:
-                self.algorithm.Error(f"Error calculating total return for {self.symbol}: {str(e)}")
+                self.algorithm.Error(f"MTUM SymbolData {self.symbol}: OnDataConsolidated error: {str(e)}")
+
+        def _update_monthly_prices(self):
+            """Update monthly price snapshots."""
+            if self.price_window.Count > 0:
+                current_price = self.price_window[0]
+                if not self.monthly_prices or current_price != self.monthly_prices[-1]:
+                    self.monthly_prices.append(current_price)
+
+        def GetTotalReturn(self, lookbackMonths):
+            """Calculate total return over specified lookback period (excluding recent period)."""
+            try:
+                if not self.IsReady or len(self.monthly_prices) < lookbackMonths + 1:
+                    return None
+                
+                # Get current price (excluding recent period)
+                recent_days_back = min(self.recent_exclusion_days, self.price_window.Count - 1)
+                current_price = self.price_window[recent_days_back] if recent_days_back > 0 else self.price_window[0]
+                
+                # Get lookback price
+                lookback_price = self.monthly_prices[-(lookbackMonths + 1)]
+                
+                if lookback_price <= 0:
+                    return None
+                
+                # Calculate total return
+                total_return = (current_price / lookback_price) - 1
+                return total_return
+                
+            except Exception as e:
                 return None
-        
+
         def GetVolatility(self, lookbackMonths=None):
             """Calculate volatility over specified period."""
             try:
-                if lookbackMonths:
-                    # Use monthly returns for longer periods
-                    if len(self.monthly_prices) < lookbackMonths + 1:
-                        return None
-                    
-                    monthly_returns = []
-                    for i in range(1, min(lookbackMonths + 1, len(self.monthly_prices))):
-                        if self.monthly_prices[-i-1] > 0:
-                            ret = (self.monthly_prices[-i] / self.monthly_prices[-i-1]) - 1
-                            monthly_returns.append(ret)
-                    
-                    if len(monthly_returns) > 1:
-                        return np.std(monthly_returns) * np.sqrt(12)  # Annualize
-                else:
-                    # Use daily returns for shorter periods
-                    if len(self.daily_returns) < 30:
-                        return None
-                    
-                    recent_returns = list(self.daily_returns)[-252:]  # Last year
-                    if len(recent_returns) > 1:
-                        return np.std(recent_returns) * np.sqrt(252)  # Annualize
+                if not self.IsReady:
+                    return None
                 
-                return None
+                # Use default volatility lookback if not specified
+                lookback_days = self.volLookbackDays if lookbackMonths is None else lookbackMonths * 22
+                
+                if self.price_window.Count < lookback_days + 1:
+                    return None
+                
+                # Calculate daily returns
+                returns = []
+                for i in range(1, min(lookback_days + 1, self.price_window.Count)):
+                    if self.price_window[i] > 0:
+                        daily_return = (self.price_window[i-1] / self.price_window[i]) - 1
+                        returns.append(daily_return)
+                
+                if len(returns) < 10:
+                    return None
+                
+                vol = np.std(returns) * np.sqrt(252)  # Annualized
+                return vol if vol > 0 else None
                 
             except Exception as e:
-                self.algorithm.Error(f"Error calculating volatility for {self.symbol}: {str(e)}")
                 return None
-        
-        def _update_data_quality(self):
-            """Update data quality score."""
-            if self.total_data_points == 0:
-                self.data_quality_score = 0.0
-                return
-            
-            # Simple quality score based on consecutive valid days
-            self.data_quality_score = min(1.0, self.consecutive_valid_days / 50.0)
-        
+
         def GetDataQuality(self):
             """Get data quality metrics."""
             return {
-                'quality_score': self.data_quality_score,
-                'total_points': self.total_data_points,
-                'consecutive_valid': self.consecutive_valid_days,
-                'daily_prices_count': len(self.daily_prices),
-                'monthly_prices_count': len(self.monthly_prices)
+                'symbol': str(self.symbol),
+                'data_points_received': self.data_points_received,
+                'price_window_count': self.price_window.Count,
+                'monthly_prices_count': len(self.monthly_prices),
+                'lookback_months': self.lookbackMonthsList,
+                'vol_lookback_days': self.volLookbackDays,
+                'recent_exclusion_days': self.recent_exclusion_days,
+                'is_ready': self.IsReady,
+                'last_update': self.last_update_time
             }
-        
+
         def Dispose(self):
-            """Clean up resources."""
-            self.daily_prices.clear()
-            self.monthly_prices.clear()
-            self.daily_returns.clear()
+            """Clean disposal of resources."""
+            try:
+                if hasattr(self, 'consolidator') and self.consolidator:
+                    self.algorithm.SubscriptionManager.RemoveConsolidator(self.symbol, self.consolidator)
+                self.price_window.Reset()
+                self.monthly_prices.clear()
+            except:
+                pass
 
     def OnSecuritiesChanged(self, changes):
         """Handle securities changes."""
@@ -715,13 +699,7 @@ class MTUMCTAStrategy:
             for security in changes.AddedSecurities:
                 symbol = security.Symbol
                 if symbol not in self.symbol_data:
-                    self.symbol_data[symbol] = self.SymbolData(
-                        algorithm=self.algorithm,
-                        symbol=symbol,
-                        lookbackMonthsList=self.config_dict['momentum_lookbacks_months'],
-                        volLookbackDays=self.config_dict['volatility_lookback_days'],
-                        recent_exclusion_days=self.config_dict['recent_exclusion_days']
-                    )
+                    self.symbol_data[symbol] = self._create_symbol_data(symbol)
                     self.algorithm.Log(f"{self.name}: Added symbol data for {symbol}")
             
             # Remove securities

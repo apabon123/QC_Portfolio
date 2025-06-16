@@ -17,31 +17,59 @@ This is the main entry point that assembles the complete configuration.
 
 from AlgorithmImports import *
 
-# Import specialized configuration modules (FIXED: Use absolute imports for QuantConnect)
-from src.components.config_market_strategy import (
-    ALGORITHM_CONFIG,
-    ASSET_CATEGORIES,
-    STRATEGY_ASSET_FILTERS,
-    STRATEGY_CONFIGS,
-    ALLOCATION_CONFIG,
-    RISK_CONFIG,
-    UNIVERSE_CONFIG,
-    SYSTEM_CONFIG,
-    get_strategy_allowed_symbols,
-    get_enabled_strategies,
-    get_strategy_modules
-)
-
-from src.components.config_execution_plumbing import (
-    QC_NATIVE_CONFIG,
-    FUTURES_CONFIG,
-    EXECUTION_CONFIG,
-    MONITORING_CONFIG,
-    CONSTRAINTS_CONFIG,
-    CONTINUOUS_CONTRACTS_CONFIG,
-    get_futures_rollover_config,
-    validate_futures_config
-)
+# Import specialized configuration modules (QuantConnect compatible imports)
+try:
+    # Try relative imports first (QuantConnect cloud)
+    from .config_market_strategy import (
+        ALGORITHM_CONFIG,
+        ASSET_CATEGORIES,
+        STRATEGY_ASSET_FILTERS,
+        STRATEGY_CONFIGS,
+        ALLOCATION_CONFIG,
+        RISK_CONFIG,
+        UNIVERSE_CONFIG,
+        SYSTEM_CONFIG,
+        get_strategy_allowed_symbols,
+        get_enabled_strategies,
+        get_strategy_modules
+    )
+    
+    from .config_execution_plumbing import (
+        QC_NATIVE_CONFIG,
+        FUTURES_CONFIG,
+        EXECUTION_CONFIG,
+        MONITORING_CONFIG,
+        CONSTRAINTS_CONFIG,
+        CONTINUOUS_CONTRACTS_CONFIG,
+        get_futures_rollover_config,
+        validate_futures_config
+    )
+except ImportError:
+    # Fallback to direct imports (local development)
+    from config_market_strategy import (
+        ALGORITHM_CONFIG,
+        ASSET_CATEGORIES,
+        STRATEGY_ASSET_FILTERS,
+        STRATEGY_CONFIGS,
+        ALLOCATION_CONFIG,
+        RISK_CONFIG,
+        UNIVERSE_CONFIG,
+        SYSTEM_CONFIG,
+        get_strategy_allowed_symbols,
+        get_enabled_strategies,
+        get_strategy_modules
+    )
+    
+    from config_execution_plumbing import (
+        QC_NATIVE_CONFIG,
+        FUTURES_CONFIG,
+        EXECUTION_CONFIG,
+        MONITORING_CONFIG,
+        CONSTRAINTS_CONFIG,
+        CONTINUOUS_CONTRACTS_CONFIG,
+        get_futures_rollover_config,
+        validate_futures_config
+    )
 
 # =============================================================================
 # MASTER CONFIGURATION ASSEMBLY
@@ -69,7 +97,10 @@ def get_full_config():
         
         # Execution and Plumbing Configuration
         'qc_native': QC_NATIVE_CONFIG,
-        'execution': EXECUTION_CONFIG,
+        'execution': {
+            **EXECUTION_CONFIG,
+            'futures_config': FUTURES_CONFIG  # Add futures config to execution for easier access
+        },
         'monitoring': MONITORING_CONFIG,
         'constraints': CONSTRAINTS_CONFIG,
         'continuous_contracts': CONTINUOUS_CONTRACTS_CONFIG
