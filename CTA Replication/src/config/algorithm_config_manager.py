@@ -70,15 +70,15 @@ class AlgorithmConfigManager:
         This is the SINGLE ENTRY POINT for all config operations.
         
         Args:
-            variant: Configuration variant to load (simplified - only 'full' supported now)
+            variant: Configuration variant to load ('full', 'development', 'conservative', etc.)
             
         Returns:
             dict: Fully validated and normalized configuration
         """
         try:
-            self.algorithm.Log(f"CONFIG MANAGER: Loading simplified configuration...")
+            self.algorithm.Log(f"CONFIG MANAGER: Loading main configuration...")
             
-            # Load the main configuration (simplified)
+            # Load the main configuration
             self.config = self._load_main_config()
             self.config_variant = "full"
             self.last_update = self.algorithm.Time if hasattr(self.algorithm, 'Time') else None
@@ -374,12 +374,15 @@ class AlgorithmConfigManager:
             self.algorithm.SetWarmUp(warmup_days)
             self.applied_settings['warmup_period_days'] = warmup_days
             
-            # Calculate expected warmup end date for logging
-            expected_warmup_end = start_datetime + timedelta(days=warmup_days)
-            self.applied_settings['expected_warmup_end'] = expected_warmup_end
+            # Calculate expected warmup periods for logging (warmup happens BEFORE start date)
+            data_start_date = start_datetime - timedelta(days=warmup_days)  # When data feed starts
+            trading_start_date = start_datetime  # When actual trading begins (after warmup)
+            self.applied_settings['data_start_date'] = data_start_date
+            self.applied_settings['trading_start_date'] = trading_start_date
             
             self.algorithm.Log(f"CONFIG APPLIED: SetWarmUp({warmup_days} days)")
-            self.algorithm.Log(f"CONFIG INFO: Warmup should end around {expected_warmup_end}")
+            self.algorithm.Log(f"CONFIG INFO: Data starts {data_start_date} (warmup period)")
+            self.algorithm.Log(f"CONFIG INFO: Trading starts {trading_start_date} (after warmup completes)")
             
             # 6. Set resolution
             resolution = algo_config.get('resolution', 'Daily')
@@ -961,7 +964,7 @@ class AlgorithmConfigManager:
             data_config = self.get_data_integrity_config()
             self.algorithm.Log("✓ Data integrity configuration validated")
             
-            self.algorithm.Log("CONFIG VALIDATION: ✅ ALL CONFIGURATION VALIDATED SUCCESSFULLY")
+            self.algorithm.Log("CONFIG VALIDATION: ALL CONFIGURATION VALIDATED SUCCESSFULLY")
             return True
             
         except Exception as e:
@@ -972,57 +975,315 @@ class AlgorithmConfigManager:
     
     def get_config_audit_report(self) -> str:
         """
-        Generate a complete audit report of all configuration values.
-        CRITICAL: Use this to verify exactly what configuration is being used.
+        Generate a detailed audit report of the current configuration.
+        
+        Returns:
+            str: Formatted audit report
         """
         try:
+            if not self.config:
+                return "ERROR: No configuration loaded"
+            
             report_lines = []
             report_lines.append("=" * 80)
             report_lines.append("CONFIGURATION AUDIT REPORT")
             report_lines.append("=" * 80)
             
-            # Algorithm configuration
+            # Algorithm settings
             algo_config = self.get_algorithm_config()
-            report_lines.append("\n[ALGORITHM CONFIGURATION]")
-            for key, value in algo_config.items():
-                report_lines.append(f"  {key}: {value}")
+            report_lines.append(f"Algorithm: {algo_config.get('start_date', 'N/A')} to {algo_config.get('end_date', 'N/A')}")
+            report_lines.append(f"Initial Cash: ${algo_config.get('initial_cash', 0):,.2f}")
+            report_lines.append(f"Resolution: {algo_config.get('resolution', 'N/A')}")
             
-            # Universe configuration
-            universe_config = self.get_universe_config()
-            report_lines.append("\n[UNIVERSE CONFIGURATION]")
-            for priority, symbols in universe_config.items():
-                report_lines.append(f"  Priority {priority}: {len(symbols)} symbols")
-                for symbol in symbols:
-                    report_lines.append(f"    - {symbol['ticker']}: {symbol['name']}")
-            
-            # Strategy configurations
+            # Enabled strategies
             enabled_strategies = self.get_enabled_strategies()
-            report_lines.append("\n[STRATEGY CONFIGURATIONS]")
+            report_lines.append(f"Enabled Strategies: {len(enabled_strategies)}")
             for strategy_name in enabled_strategies:
                 strategy_config = self.get_strategy_config(strategy_name)
-                report_lines.append(f"  {strategy_name}:")
-                for key, value in strategy_config.items():
-                    report_lines.append(f"    {key}: {value}")
+                report_lines.append(f"  - {strategy_name}: {strategy_config.get('description', 'N/A')}")
             
             # Risk configuration
             risk_config = self.get_risk_config()
-            report_lines.append("\n[RISK MANAGEMENT CONFIGURATION]")
-            for key, value in risk_config.items():
-                report_lines.append(f"  {key}: {value}")
+            report_lines.append(f"Target Portfolio Vol: {risk_config.get('target_portfolio_vol', 'N/A')}")
+            report_lines.append(f"Max Leverage: {risk_config.get('max_leverage_multiplier', 'N/A')}")
             
-            # Execution configuration
-            execution_config = self.get_execution_config()
-            report_lines.append("\n[EXECUTION CONFIGURATION]")
-            for key, value in execution_config.items():
-                report_lines.append(f"  {key}: {value}")
+            # Allocation configuration
+            allocation_config = self.get_allocation_config()
+            report_lines.append("Strategy Allocations:")
+            for strategy_name, allocation in allocation_config.get('initial_allocations', {}).items():
+                report_lines.append(f"  - {strategy_name}: {allocation:.1%}")
             
-            report_lines.append("\n" + "=" * 80)
-            report_lines.append("END CONFIGURATION AUDIT REPORT")
             report_lines.append("=" * 80)
             
             return "\n".join(report_lines)
             
         except Exception as e:
-            error_msg = f"Failed to generate configuration audit report: {str(e)}"
-            self.algorithm.Error(f"ERROR: {error_msg}")
-            return f"CONFIGURATION AUDIT FAILED: {error_msg}"
+            return f"ERROR generating audit report: {str(e)}"
+
+    # =============================================================================
+    # NEW WARM-UP CONFIGURATION METHODS (BASED ON QC PRIMER)
+    # =============================================================================
+    
+    def get_warmup_config(self) -> dict:
+        """
+        Get the warm-up configuration with strategy-specific requirements.
+        
+        Returns:
+            dict: Warm-up configuration
+        """
+        try:
+            algo_config = self.get_algorithm_config()
+            return algo_config.get('warmup', {
+                'enabled': False,
+                'method': 'time_based',
+                'minimum_days': 252,
+                'strategy_requirements': {},
+                'buffer_multiplier': 1.2,
+                'validate_indicators_ready': True,
+                'log_warmup_progress': True,
+            })
+        except Exception as e:
+            self.algorithm.Error(f"Failed to get warmup config: {str(e)}")
+            return {'enabled': False}
+    
+    def calculate_max_warmup_needed(self) -> int:
+        """
+        Calculate the maximum warm-up period needed across all enabled strategies.
+        
+        Returns:
+            int: Maximum warm-up days needed
+        """
+        try:
+            warmup_config = self.get_warmup_config()
+            
+            if not warmup_config.get('enabled', False):
+                return 0
+            
+            if not warmup_config.get('auto_calculate_period', False):
+                return warmup_config.get('minimum_days', 252)
+            
+            # Get enabled strategies
+            enabled_strategies = self.get_enabled_strategies()
+            strategy_requirements = warmup_config.get('strategy_requirements', {})
+            
+            max_days = warmup_config.get('minimum_days', 252)
+            
+            # Find maximum requirement across enabled strategies
+            for strategy_name in enabled_strategies:
+                strategy_requirement = strategy_requirements.get(strategy_name, 0)
+                max_days = max(max_days, strategy_requirement)
+                
+                # Also check strategy-specific warmup config
+                strategy_config = self.get_strategy_config(strategy_name)
+                strategy_warmup = strategy_config.get('warmup_config', {})
+                strategy_days = strategy_warmup.get('required_days', 0)
+                max_days = max(max_days, strategy_days)
+            
+            # Apply buffer multiplier
+            buffer_multiplier = warmup_config.get('buffer_multiplier', 1.2)
+            final_days = int(max_days * buffer_multiplier)
+            
+            self.algorithm.Log(f"CONFIG MANAGER: Calculated warmup period: {final_days} days")
+            self.algorithm.Log(f"  - Base requirements: {max_days} days")
+            self.algorithm.Log(f"  - Buffer multiplier: {buffer_multiplier}")
+            self.algorithm.Log(f"  - Enabled strategies: {list(enabled_strategies.keys())}")
+            
+            return final_days
+            
+        except Exception as e:
+            self.algorithm.Error(f"Failed to calculate warmup period: {str(e)}")
+            return 252  # Default to 1 year
+    
+    def get_futures_chain_config(self) -> dict:
+        """
+        Get the futures chain liquidity configuration.
+        
+        Returns:
+            dict: Futures chain configuration
+        """
+        try:
+            # Try to get from config, fallback to defaults
+            if hasattr(self, 'config') and self.config:
+                # Look for futures chain config in multiple possible locations
+                chain_config = (
+                    self.config.get('futures_chain', {}) or
+                    self.config.get('universe', {}).get('futures_chain', {}) or
+                    self.config.get('execution', {}).get('futures_chain', {})
+                )
+                
+                if chain_config:
+                    return chain_config
+            
+            # Fallback to default configuration
+            return {
+                'liquidity_during_warmup': {
+                    'enabled': True,
+                    'check_method': 'chain_analysis',
+                    'major_liquid_contracts': [
+                        'ES', 'NQ', 'YM', 'RTY',       # Equity indices
+                        'ZN', 'ZB', 'ZF', 'ZT',        # Interest rates
+                        '6E', '6J', '6B', '6A',        # FX
+                        'CL', 'GC', 'SI', 'HG'         # Commodities
+                    ],
+                    'fallback_to_major_list': True,
+                    'log_chain_analysis': True,
+                },
+                'post_warmup_liquidity': {
+                    'check_method': 'full_validation',
+                    'min_volume': 1000,
+                    'min_open_interest': 50000,
+                    'max_bid_ask_spread': 0.001,
+                    'use_mapped_contract': True,
+                }
+            }
+            
+        except Exception as e:
+            self.algorithm.Error(f"Failed to get futures chain config: {str(e)}")
+            return {'liquidity_during_warmup': {'enabled': False}}
+    
+    def validate_warmup_indicators(self, strategy_name: str) -> bool:
+        """
+        Validate that all required indicators are ready for a strategy after warm-up.
+        
+        Args:
+            strategy_name: Name of the strategy to validate
+            
+        Returns:
+            bool: True if all indicators are ready
+        """
+        try:
+            strategy_config = self.get_strategy_config(strategy_name)
+            warmup_config = strategy_config.get('warmup_config', {})
+            
+            required_indicators = warmup_config.get('indicator_validation', [])
+            
+            if not required_indicators:
+                self.algorithm.Log(f"CONFIG MANAGER: No indicator validation required for {strategy_name}")
+                return True
+            
+            # This method would need to be implemented in the strategy classes
+            # For now, we'll just log the requirement
+            self.algorithm.Log(f"CONFIG MANAGER: {strategy_name} requires validation of indicators: {required_indicators}")
+            
+            return True  # Placeholder - actual validation would be done by strategy
+            
+        except Exception as e:
+            self.algorithm.Error(f"Failed to validate warmup indicators for {strategy_name}: {str(e)}")
+            return False
+    
+    def get_warmup_progress_info(self) -> dict:
+        """
+        Get information about warm-up progress for logging.
+        
+        Returns:
+            dict: Warm-up progress information
+        """
+        try:
+            warmup_config = self.get_warmup_config()
+            
+            if not warmup_config.get('enabled', False):
+                return {'enabled': False}
+            
+            max_days = self.calculate_max_warmup_needed()
+            
+            return {
+                'enabled': True,
+                'max_days_needed': max_days,
+                'method': warmup_config.get('method', 'time_based'),
+                'resolution': warmup_config.get('resolution', 'Daily'),
+                'enabled_strategies': list(self.get_enabled_strategies().keys()),
+                'log_progress': warmup_config.get('log_warmup_progress', True),
+            }
+            
+        except Exception as e:
+            self.algorithm.Error(f"Failed to get warmup progress info: {str(e)}")
+            return {'enabled': False}
+    
+    def should_assume_liquid_during_warmup(self, symbol_str: str) -> bool:
+        """
+        Check if a symbol should be assumed liquid during warm-up based on configuration.
+        
+        Args:
+            symbol_str: String representation of the symbol
+            
+        Returns:
+            bool: True if symbol should be assumed liquid during warm-up
+        """
+        try:
+            chain_config = self.get_futures_chain_config()
+            warmup_config = chain_config.get('liquidity_during_warmup', {})
+            
+            if not warmup_config.get('enabled', False):
+                return False
+            
+            # Extract ticker from symbol
+            ticker = symbol_str.replace('/', '').replace('\\', '')
+            
+            # Check if it's in the major liquid contracts list
+            major_contracts = warmup_config.get('major_liquid_contracts', [])
+            
+            for major_ticker in major_contracts:
+                if major_ticker in ticker:
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            self.algorithm.Error(f"Failed to check warmup liquidity assumption for {symbol_str}: {str(e)}")
+            return False
+    
+    def get_data_interface_config(self) -> dict:
+        """
+        Get configuration for the unified data interface (Phase 3).
+        
+        Returns:
+            dict: Data interface configuration with performance and access settings
+        """
+        try:
+            # Get base data interface config from main config
+            data_interface_config = self.config.get('data_interface', {})
+            
+            # Provide sensible defaults for Phase 3 optimization
+            default_config = {
+                'enabled': True,
+                'performance_monitoring': {
+                    'enabled': True,
+                    'log_frequency_minutes': 30,
+                    'track_cache_efficiency': True,
+                    'track_access_patterns': True
+                },
+                'data_access_patterns': {
+                    'default_data_types': ['bars', 'chains'],
+                    'enable_tick_data': False,
+                    'enable_quote_data': False,
+                    'futures_chain_analysis': True
+                },
+                'optimization_settings': {
+                    'use_unified_slice_access': True,
+                    'eliminate_direct_slice_manipulation': True,
+                    'standardize_historical_access': True,
+                    'unified_chain_analysis': True
+                },
+                'validation_integration': {
+                    'use_data_validator': True,
+                    'track_validation_failures': True,
+                    'log_validation_issues': True
+                },
+                'cache_integration': {
+                    'use_qc_native_caching': True,
+                    'leverage_data_accessor': True,
+                    'track_cache_performance': True
+                }
+            }
+            
+            # Merge with any existing configuration
+            merged_config = {**default_config, **data_interface_config}
+            
+            self.algorithm.Log("CONFIG: Data interface configuration loaded for Phase 3 optimization")
+            
+            return merged_config
+            
+        except Exception as e:
+            error_msg = f"CRITICAL ERROR loading data interface configuration: {str(e)}"
+            self.algorithm.Error(error_msg)
+            raise ValueError(error_msg)

@@ -77,11 +77,11 @@ class KestnerCTAStrategy(BaseStrategy):
         days_since_rebalance = (current_time.date() - self.last_rebalance_date).days
         return days_since_rebalance >= 7  # Weekly rebalancing
     
-    def generate_signals(self):
+    def generate_signals(self, slice=None):
         """Generate Kestner momentum signals across all liquid symbols."""
         try:
             signals = {}
-            liquid_symbols = self._get_liquid_symbols()
+            liquid_symbols = self._get_liquid_symbols(slice)
             
             if not liquid_symbols:
                 self.algorithm.Log(f"{self.name}: No liquid symbols available for signal generation")
@@ -126,10 +126,10 @@ class KestnerCTAStrategy(BaseStrategy):
             self.algorithm.Error(f"{self.name}: Error generating signals: {str(e)}")
             return {}
     
-    def _get_liquid_symbols(self):
-        """Get liquid symbols from futures manager."""
+    def _get_liquid_symbols(self, slice=None):
+        """Get liquid symbols from futures manager with proper slice passing."""
         if self.futures_manager and hasattr(self.futures_manager, 'get_liquid_symbols'):
-            liquid_symbols = self.futures_manager.get_liquid_symbols()
+            liquid_symbols = self.futures_manager.get_liquid_symbols(slice)
             self.algorithm.Log(f"{self.name}: Futures manager returned {len(liquid_symbols)} liquid symbols")
             for symbol in liquid_symbols:
                 self.algorithm.Log(f"{self.name}: Liquid symbol: {symbol}")

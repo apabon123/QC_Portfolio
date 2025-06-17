@@ -13,17 +13,19 @@ class BaseStrategy(ABC):
     All strategies should inherit from this class for consistency and maintainability.
     """
     
-    def __init__(self, algorithm, config_manager, strategy_name):
+    def __init__(self, algorithm, config_manager, strategy_name, shared_symbols=None):
         """
-        Initialize base strategy with centralized configuration.
+        Initialize base strategy with centralized configuration and shared symbols.
         CRITICAL: All configuration MUST come through config_manager.
         NO fallback logic allowed.
         """
         self.algorithm = algorithm
         self.config_manager = config_manager
         self.name = strategy_name
+        self.shared_symbols = shared_symbols or {}  # Shared symbols from OptimizedSymbolManager
         
-        # Set up futures manager reference for liquid symbol access
+        # Set up optimized data access
+        self.data_accessor = getattr(algorithm, 'data_accessor', None)
         self.futures_manager = getattr(algorithm, 'futures_manager', None)
         
         try:
@@ -92,13 +94,13 @@ class BaseStrategy(ABC):
         except Exception as e:
             self.algorithm.Error(f"{self.name}: Error in update: {str(e)}")
     
-    def generate_targets(self):
+    def generate_targets(self, slice=None):
         """Common target generation pattern found in all strategies."""
         try:
             if not self.should_rebalance(self.algorithm.Time):
                 return self.current_targets
             
-            signals = self.generate_signals()
+            signals = self.generate_signals(slice)
             if not signals:
                 return {}
             
@@ -284,20 +286,14 @@ class BaseStrategy(ABC):
     # ============================================================================
     
     def get_qc_history(self, symbol, periods, resolution=Resolution.Daily):
-        """CENTRALIZED History API usage via DataIntegrityChecker."""
+        """OPTIMIZED History API usage via QC Native Data Accessor."""
         try:
-            # PRIORITY 1: Use centralized data integrity checker with caching
-            if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
-                history = self.algorithm.data_integrity_checker.get_history(symbol, periods, resolution)
+            # PRIORITY 1: Use QC native data accessor (leverages QC's built-in caching)
+            if self.data_accessor:
+                history = self.data_accessor.get_qc_native_history(symbol, periods, resolution)
                 return history if history is not None and not history.empty else None
             
-            # PRIORITY 2: Use QC native contract resolver if available
-            if hasattr(self.algorithm, 'contract_resolver') and self.algorithm.contract_resolver:
-                history = self.algorithm.contract_resolver.get_history_with_diagnostics(symbol, periods, resolution)
-                return history if history is not None and not history.empty else None
-            
-            # FALLBACK: Direct QC History method (NOT RECOMMENDED)
-            self.algorithm.Log(f"{self.name}: WARNING - Using direct History API")
+            # FALLBACK: Direct QC History method (QC handles caching internally)
             history = self.algorithm.History(symbol, periods, resolution)
             return history if history is not None and not history.empty else None
                 
@@ -344,7 +340,7 @@ class BaseStrategy(ABC):
     # ============================================================================
     
     @abstractmethod
-    def generate_signals(self):
+    def generate_signals(self, slice=None):
         """Generate raw trading signals - core strategy logic."""
         pass
     
@@ -374,13 +370,14 @@ class BaseStrategy(ABC):
             self.data_availability_error = None
         
         def get_qc_history(self, periods, resolution=Resolution.Daily):
-            """CENTRALIZED history access for SymbolData via DataIntegrityChecker."""
+            """OPTIMIZED history access for SymbolData via QC Native Data Accessor."""
             try:
-                if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
-                    history = self.algorithm.data_integrity_checker.get_history(self.symbol, periods, resolution)
+                # Use QC native data accessor if available
+                if hasattr(self.algorithm, 'data_accessor') and self.algorithm.data_accessor:
+                    history = self.algorithm.data_accessor.get_qc_native_history(self.symbol, periods, resolution)
                     return history if history is not None and not history.empty else None
                 
-                self.algorithm.Log(f"SymbolData {self.symbol}: WARNING - Using direct History API")
+                # Fallback to direct QC History API (QC handles caching)
                 history = self.algorithm.History(self.symbol, periods, resolution)
                 return history if not history.empty else None
             except Exception as e:
@@ -394,4 +391,224 @@ class BaseStrategy(ABC):
         
         def Dispose(self):
             """Base cleanup."""
-            pass 
+            pass
+
+    def update_with_data(self, slice):
+        """
+        Update strategy with new market data - LEGACY METHOD.
+        This method should be overridden by derived strategies for custom logic.
+        """
+        try:
+            self.current_slice = slice
+            
+            # Update indicators if available
+            if hasattr(self, 'indicators') and self.indicators:
+                for indicator in self.indicators.values():
+                    if hasattr(indicator, 'Update'):
+                        # Update with appropriate data
+                        pass
+                        
+            # Update any internal state
+            self._update_internal_state(slice)
+            
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error in update_with_data: {str(e)}")
+
+    def update_with_unified_data(self, unified_data, slice):
+        """
+        PHASE 3: Update strategy with unified data interface.
+        This provides optimized data access for all derived strategies.
+        """
+        try:
+            # Store current slice for any legacy methods that might need it
+            self.current_slice = slice
+            
+            # Validate unified data structure
+            if not unified_data or not unified_data.get('valid', False):
+                self.algorithm.Debug(f"{self.name}: Invalid unified data received")
+                return
+            
+            # Extract symbols data from unified interface
+            symbols_data = unified_data.get('symbols', {})
+            if not symbols_data:
+                return
+            
+            # Process unified data for strategy use
+            processed_data = self._process_unified_data_for_strategy(symbols_data, unified_data)
+            
+            # Update strategy with processed unified data
+            self._update_strategy_with_unified_data(processed_data, unified_data)
+            
+            # Update indicators with unified data if available
+            if hasattr(self, 'indicators') and self.indicators:
+                self._update_indicators_with_unified_data(processed_data)
+            
+            # Update internal state using unified data
+            self._update_internal_state_with_unified_data(processed_data, unified_data)
+            
+            # Track unified data usage for this strategy
+            self._track_unified_data_usage(unified_data, processed_data)
+            
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error in update_with_unified_data: {str(e)}")
+            # Fallback to traditional method
+            self.update_with_data(slice)
+
+    def _process_unified_data_for_strategy(self, symbols_data, unified_data):
+        """Process unified data into strategy-friendly format."""
+        try:
+            processed_data = {
+                'timestamp': unified_data.get('timestamp', self.algorithm.Time),
+                'bars': {},
+                'chains': {},
+                'security_info': {},
+                'liquid_symbols': []
+            }
+            
+            # Process each symbol's data
+            for symbol, symbol_data in symbols_data.items():
+                if not symbol_data.get('valid', False):
+                    continue
+                
+                data = symbol_data.get('data', {})
+                
+                # Extract bar data
+                if 'bar' in data:
+                    bar_data = data['bar']
+                    processed_data['bars'][symbol] = {
+                        'open': bar_data.get('open', 0),
+                        'high': bar_data.get('high', 0),
+                        'low': bar_data.get('low', 0),
+                        'close': bar_data.get('close', 0),
+                        'volume': bar_data.get('volume', 0),
+                        'time': bar_data.get('time', self.algorithm.Time)
+                    }
+                
+                # Extract chain data
+                if 'chain' in data and data['chain'].get('valid', False):
+                    processed_data['chains'][symbol] = data['chain']
+                
+                # Extract security information
+                if 'security' in data:
+                    security_data = data['security']
+                    processed_data['security_info'][symbol] = {
+                        'price': security_data.get('price', 0),
+                        'has_data': security_data.get('has_data', False),
+                        'is_tradable': security_data.get('is_tradable', False),
+                        'mapped_symbol': security_data.get('mapped_symbol'),
+                        'market_hours_open': security_data.get('market_hours', False)
+                    }
+                    
+                    # Add to liquid symbols if tradable
+                    if (security_data.get('is_tradable', False) and 
+                        security_data.get('has_data', False)):
+                        processed_data['liquid_symbols'].append(symbol)
+            
+            return processed_data
+            
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error processing unified data: {str(e)}")
+            return {'timestamp': self.algorithm.Time, 'bars': {}, 'chains': {}, 'security_info': {}, 'liquid_symbols': []}
+
+    def _update_strategy_with_unified_data(self, processed_data, unified_data):
+        """Update strategy logic with processed unified data - override in derived classes."""
+        try:
+            # Base implementation - derived strategies should override this
+            # Update any base strategy state with processed data
+            
+            # Store processed data for access by derived strategies
+            self.current_processed_data = processed_data
+            self.current_unified_metadata = unified_data.get('metadata', {})
+            
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error updating strategy with unified data: {str(e)}")
+
+    def _update_indicators_with_unified_data(self, processed_data):
+        """Update indicators using unified data."""
+        try:
+            bars_data = processed_data.get('bars', {})
+            
+            for symbol, bar_data in bars_data.items():
+                if symbol in self.indicators:
+                    indicator = self.indicators[symbol]
+                    
+                    # Create IndicatorDataPoint for QC indicators
+                    try:
+                        data_point = IndicatorDataPoint(
+                            bar_data['time'],
+                            bar_data['close']
+                        )
+                        
+                        if hasattr(indicator, 'Update'):
+                            indicator.Update(data_point)
+                            
+                    except Exception as e:
+                        self.algorithm.Debug(f"{self.name}: Error updating indicator for {symbol}: {str(e)}")
+                        
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error updating indicators with unified data: {str(e)}")
+
+    def _update_internal_state_with_unified_data(self, processed_data, unified_data):
+        """Update internal strategy state with unified data - override in derived classes."""
+        try:
+            # Base implementation for common state updates
+            
+            # Update liquid symbols list
+            self.current_liquid_symbols = processed_data.get('liquid_symbols', [])
+            
+            # Update last update timestamp
+            self.last_unified_update = unified_data.get('timestamp', self.algorithm.Time)
+            
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error updating internal state with unified data: {str(e)}")
+
+    def _track_unified_data_usage(self, unified_data, processed_data):
+        """Track unified data usage statistics for strategy performance."""
+        try:
+            # Initialize tracking if not exists
+            if not hasattr(self, 'unified_data_stats'):
+                self.unified_data_stats = {
+                    'total_updates': 0,
+                    'symbols_processed': 0,
+                    'data_efficiency': 0.0
+                }
+            
+            # Update statistics
+            self.unified_data_stats['total_updates'] += 1
+            self.unified_data_stats['symbols_processed'] += len(processed_data.get('liquid_symbols', []))
+            
+            # Calculate running efficiency
+            metadata = unified_data.get('metadata', {})
+            current_efficiency = len(processed_data.get('liquid_symbols', [])) / max(metadata.get('total_symbols', 1), 1)
+            
+            updates = self.unified_data_stats['total_updates']
+            self.unified_data_stats['data_efficiency'] = (
+                (self.unified_data_stats['data_efficiency'] * (updates - 1) + current_efficiency) / updates
+            )
+            
+        except Exception as e:
+            self.algorithm.Debug(f"{self.name}: Error tracking unified data usage: {str(e)}")
+
+    def get_unified_data_performance(self):
+        """Get unified data performance statistics for this strategy."""
+        try:
+            if hasattr(self, 'unified_data_stats'):
+                return {
+                    'strategy_name': self.name,
+                    'total_unified_updates': self.unified_data_stats.get('total_updates', 0),
+                    'avg_symbols_processed': self.unified_data_stats.get('symbols_processed', 0) / max(self.unified_data_stats.get('total_updates', 1), 1),
+                    'data_efficiency': round(self.unified_data_stats.get('data_efficiency', 0.0) * 100, 1),
+                    'integration_status': 'active'
+                }
+            else:
+                return {
+                    'strategy_name': self.name,
+                    'integration_status': 'legacy_mode'
+                }
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error getting unified data performance: {str(e)}")
+            return {'strategy_name': self.name, 'integration_status': 'error'}
+
+    def _update_internal_state(self, slice):
+        """Update internal state - can be overridden by derived strategies."""
+        pass 

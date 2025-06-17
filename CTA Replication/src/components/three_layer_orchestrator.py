@@ -24,10 +24,11 @@ class ThreeLayerOrchestrator:
     - FIXED: Uses correct method names for all components
     """
     
-    def __init__(self, algorithm, config_manager):
+    def __init__(self, algorithm, config_manager, shared_symbols=None):
         self.algorithm = algorithm
         self.config_manager = config_manager
         self.config = config_manager.get_config()
+        self.shared_symbols = shared_symbols or {}  # Shared symbols from OptimizedSymbolManager
         
         # Three-layer components
         self.strategy_loader = None      # Layer 1: Dynamic strategy management
@@ -83,7 +84,8 @@ class ThreeLayerOrchestrator:
             
             self.strategy_loader = StrategyLoader(
                 algorithm=self.algorithm,
-                config_manager=self.config_manager
+                config_manager=self.config_manager,
+                shared_symbols=self.shared_symbols
             )
             
             # Load all enabled strategies dynamically
@@ -312,7 +314,7 @@ class ThreeLayerOrchestrator:
     # =============================================================================
     
     def _execute_layer1_rebalance(self):
-        """Execute Layer 1: Get strategy signals."""
+        """Execute Layer 1: Get strategy signals with proper slice passing."""
         try:
             strategy_targets = {}
             
@@ -321,6 +323,9 @@ class ThreeLayerOrchestrator:
                 return strategy_targets
             
             loaded_strategies = self.strategy_loader.get_strategy_objects()
+            
+            # Get current slice for futures chain access
+            current_slice = getattr(self, '_current_slice', None)
             
             # Log strategy availability status
             available_count = 0
@@ -345,15 +350,16 @@ class ThreeLayerOrchestrator:
                         self.algorithm.Log(f"LAYER 1: {strategy_name} not available - skipping signal generation")
                         continue
                     
+                    # CRITICAL: Pass slice to strategies for futures chain access
                     if hasattr(strategy, 'generate_targets'):
-                        targets = strategy.generate_targets()
+                        targets = strategy.generate_targets(current_slice)
                         if targets:
                             strategy_targets[strategy_name] = targets
                             self.algorithm.Log(f"LAYER 1: {strategy_name} generated {len(targets)} targets")
                         else:
                             self.algorithm.Log(f"LAYER 1: {strategy_name} generated no targets")
                     elif hasattr(strategy, 'get_target_weights'):
-                        targets = strategy.get_target_weights()
+                        targets = strategy.get_target_weights(current_slice)
                         if targets:
                             strategy_targets[strategy_name] = targets
                             self.algorithm.Log(f"LAYER 1: {strategy_name} generated {len(targets)} targets")
@@ -623,33 +629,144 @@ class ThreeLayerOrchestrator:
             self.algorithm.Error(f"ORCHESTRATOR: Error in update_during_warmup: {str(e)}")
     
     def update_with_data(self, slice):
-        """Update components with new market data."""
+        """
+        Update with slice data - LEGACY METHOD FOR BACKWARD COMPATIBILITY
+        This method is called by the main algorithm's OnData method.
+        """
         try:
-            # Update strategies with new data
-            if hasattr(self, 'strategy_loader') and self.strategy_loader:
-                for strategy_name, strategy in self.strategy_loader.strategy_objects.items():
-                    if hasattr(strategy, 'update_with_data'):
-                        try:
-                            strategy.update_with_data(slice)
-                        except Exception as e:
-                            self.algorithm.Error(f"ORCHESTRATOR: Error updating {strategy_name} with data: {str(e)}")
+            # Get liquid symbols first
+            liquid_symbols = self._get_liquid_symbols(slice)
             
-            # Update other components if needed
-            if hasattr(self, 'allocator') and self.allocator:
-                if hasattr(self.allocator, 'update_with_data'):
-                    try:
-                        self.allocator.update_with_data(slice)
-                    except Exception as e:
-                        self.algorithm.Error(f"ORCHESTRATOR: Error updating allocator with data: {str(e)}")
-                        
+            if not liquid_symbols:
+                return
+            
+            # Pass liquid symbols to all components
+            if self.strategy_loader:
+                self.strategy_loader.update_strategies(slice, liquid_symbols)
+            
+            if self.allocator:
+                self.allocator.update_market_data(slice, liquid_symbols)
+            
+            if self.risk_manager:
+                self.risk_manager.update_market_data(slice, liquid_symbols)
+            
         except Exception as e:
-            self.algorithm.Error(f"ORCHESTRATOR: Error in update_with_data: {str(e)}")
-    
-    def generate_portfolio_targets(self):
-        """Generate portfolio targets - main entry point for rebalancing."""
+            self.algorithm.Error(f"ORCHESTRATOR: update_with_data error: {str(e)}")
+
+    def update_with_unified_data(self, unified_data, slice):
+        """
+        PHASE 3: Update with unified data interface.
+        This method uses the standardized unified data format for optimal performance.
+        """
         try:
-            # This should be called by the main algorithm's rebalancing methods
-            return self.weekly_rebalance()
+            # Validate unified data structure
+            if not unified_data or not unified_data.get('valid', False):
+                self.algorithm.Log("ORCHESTRATOR: Invalid unified data received")
+                return
+            
+            # Extract symbols from unified data
+            symbols_data = unified_data.get('symbols', {})
+            if not symbols_data:
+                return
+            
+            # Get liquid symbols from unified data
+            liquid_symbols = []
+            for symbol, symbol_data in symbols_data.items():
+                if symbol_data.get('valid', False):
+                    # Check if symbol has tradeable data
+                    security_data = symbol_data.get('data', {}).get('security', {})
+                    if security_data.get('is_tradable', False) and security_data.get('has_data', False):
+                        liquid_symbols.append(symbol)
+            
+            if not liquid_symbols:
+                return
+            
+            # Update all components with unified data
+            if self.strategy_loader:
+                # Pass unified data to strategy loader
+                if hasattr(self.strategy_loader, 'update_strategies_with_unified_data'):
+                    self.strategy_loader.update_strategies_with_unified_data(unified_data, liquid_symbols)
+                else:
+                    # Fallback to traditional method
+                    self.strategy_loader.update_strategies(slice, liquid_symbols)
+            
+            if self.allocator:
+                # Pass unified data to allocator
+                if hasattr(self.allocator, 'update_market_data_with_unified_data'):
+                    self.allocator.update_market_data_with_unified_data(unified_data, liquid_symbols)
+                else:
+                    # Fallback to traditional method
+                    self.allocator.update_market_data(slice, liquid_symbols)
+            
+            if self.risk_manager:
+                # Pass unified data to risk manager
+                if hasattr(self.risk_manager, 'update_market_data_with_unified_data'):
+                    self.risk_manager.update_market_data_with_unified_data(unified_data, liquid_symbols)
+                else:
+                    # Fallback to traditional method
+                    self.risk_manager.update_market_data(slice, liquid_symbols)
+            
+            # Track unified data usage statistics
+            self._track_unified_data_usage(unified_data, liquid_symbols)
+            
+        except Exception as e:
+            self.algorithm.Error(f"ORCHESTRATOR: update_with_unified_data error: {str(e)}")
+            # Fallback to traditional method
+            self.update_with_data(slice)
+
+    def _track_unified_data_usage(self, unified_data, liquid_symbols):
+        """Track usage statistics for unified data interface."""
+        try:
+            metadata = unified_data.get('metadata', {})
+            self.algorithm.Debug(f"ORCHESTRATOR: Processed {len(liquid_symbols)} liquid symbols "
+                               f"from {metadata.get('total_symbols', 0)} total symbols")
+        except Exception as e:
+            self.algorithm.Debug(f"ORCHESTRATOR: Error tracking unified data usage: {str(e)}")
+
+    def generate_portfolio_targets(self):
+        """Generate portfolio targets from all strategies."""
+        try:
+            if not self.strategy_loader:
+                return {}
+            
+            targets = {}
+            
+            # Get targets from all loaded strategies
+            for strategy_name, strategy in self.strategy_loader.get_strategy_objects().items():
+                if hasattr(strategy, 'get_portfolio_targets'):
+                    strategy_targets = strategy.get_portfolio_targets()
+                    if strategy_targets:
+                        targets[strategy_name] = strategy_targets
+            
+            return targets
+            
         except Exception as e:
             self.algorithm.Error(f"ORCHESTRATOR: Error generating portfolio targets: {str(e)}")
-            return {'status': 'failed', 'reason': str(e)}
+            return {}
+
+    def _get_liquid_symbols(self, slice):
+        """Get liquid symbols from slice data (legacy method)."""
+        try:
+            liquid_symbols = []
+            
+            # Use bars and futures chains to determine liquidity
+            if hasattr(slice, 'Bars'):
+                for symbol in slice.Bars.Keys:
+                    if symbol in self.algorithm.Securities:
+                        security = self.algorithm.Securities[symbol]
+                        if security.HasData and security.IsTradable:
+                            liquid_symbols.append(symbol)
+            
+            # Add symbols from futures chains if available
+            if hasattr(slice, 'FuturesChains'):
+                for symbol in slice.FuturesChains.Keys:
+                    if symbol not in liquid_symbols:
+                        chain = slice.FuturesChains[symbol]
+                        if chain and len(chain) > 0:
+                            liquid_symbols.append(symbol)
+            
+            return liquid_symbols
+            
+        except Exception as e:
+            self.algorithm.Error(f"ORCHESTRATOR: Error getting liquid symbols: {str(e)}")
+            return []

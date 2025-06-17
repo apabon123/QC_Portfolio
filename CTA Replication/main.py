@@ -30,6 +30,17 @@ try:
     from portfolio_execution_manager import PortfolioExecutionManager
     from system_reporter import SystemReporter
     from universe import FuturesManager
+    from optimized_symbol_manager import OptimizedSymbolManager
+    
+    # Defensive import for AssetFilterManager
+    try:
+        from asset_filter_manager import AssetFilterManager
+    except ImportError:
+        # AssetFilterManager will be available from universe.py fallback
+        AssetFilterManager = None
+    from qc_native_data_accessor import QCNativeDataAccessor
+    from simplified_data_integrity_checker import SimplifiedDataIntegrityChecker
+    from unified_data_interface import UnifiedDataInterface
     
     # Import utilities
     from universe_helpers import UniverseHelpers
@@ -56,188 +67,460 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
     """
     
     def Initialize(self):
-        """Initialize the Three-Layer CTA Portfolio System."""
+        """
+        Algorithm initialization with ENHANCED SECURITY validation.
+        Uses centralized configuration management with complete validation.
+        """
         try:
-            self.Log("="*80)
-            self.Log("INITIALIZING THREE-LAYER CTA PORTFOLIO SYSTEM")
-            self.Log("="*80)
+            # STEP 1: Initialize configuration management FIRST
+            self.config_manager = AlgorithmConfigManager(self)
+            self.config = self.config_manager.load_and_validate_config(variant="full")
             
-            # Check if imports were successful
-            if not IMPORTS_SUCCESSFUL:
-                self.Error(f"CRITICAL: Module imports failed: {IMPORT_ERROR}")
-                self.Error("SECURITY POLICY: No fallback trading configurations allowed")
-                self.Error("Initializing crash-prevention mode (NO TRADING)")
-                self._emergency_fallback_initialization()
-                return
+            # STEP 2: CRITICAL - Validate complete configuration
+            self.config_manager.validate_complete_configuration()
             
-            # Initialize tracking variables
+            # STEP 3: Generate and log configuration audit report
+            audit_report = self.config_manager.get_config_audit_report()
+            for line in audit_report.split('\n'):
+                self.Log(line)
+            
+            # STEP 4: QC NATIVE WARM-UP SETUP (BASED ON PRIMER)
+            self._setup_enhanced_warmup()
+            
+            # STEP 5: Initialize QC native features from validated config
+            algo_config = self.config_manager.get_algorithm_config()
+            self.SetStartDate(algo_config['start_date']['year'], 
+                             algo_config['start_date']['month'], 
+                             algo_config['start_date']['day'])
+            
+            if 'end_date' in algo_config:
+                self.SetEndDate(algo_config['end_date']['year'],
+                               algo_config['end_date']['month'],
+                               algo_config['end_date']['day'])
+            
+            self.SetCash(algo_config['initial_cash'])
+            self.SetBenchmark(algo_config.get('benchmark', 'SPY'))
+            
+            # STEP 6: Initialize OPTIMIZED symbol management (Phase 1)
+            self.symbol_manager = OptimizedSymbolManager(self, self.config_manager)
+            self.shared_symbols = self.symbol_manager.setup_shared_subscriptions()
+            
+            # Initialize QC native data accessor (Phase 2)
+            self.data_accessor = QCNativeDataAccessor(self)
+            
+            # Use simplified data integrity checker for validation only (Phase 2)
+            self.data_integrity_checker = SimplifiedDataIntegrityChecker(self, self.config_manager)
+            
+            # Initialize unified data interface (Phase 3)
+            self.unified_data = UnifiedDataInterface(
+                self, 
+                self.config_manager, 
+                self.data_accessor, 
+                self.data_integrity_checker
+            )
+            
+            # STEP 7: Initialize components with centralized config and shared symbols
+            self.orchestrator = ThreeLayerOrchestrator(self, self.config_manager, self.shared_symbols)
+            self.execution_manager = PortfolioExecutionManager(self, self.config_manager)
+            
+            # Initialize universe manager using shared symbols
+            self.universe_manager = FuturesManager(self, self.config_manager, self.shared_symbols)
+            self.universe_manager.initialize_universe()
+            
+            # Initialize performance reporting
+            self.reporter = SystemReporter(self, self.config_manager)
+            
+            # Schedule weekly rebalancing (market close on Fridays)
+            self.Schedule.On(
+                self.DateRules.WeekEnd(),
+                self.TimeRules.BeforeMarketClose("SPY", 30),
+                self.WeeklyRebalance
+            )
+            
+            # Schedule monthly reporting
+            self.Schedule.On(
+                self.DateRules.MonthStart(),
+                self.TimeRules.AfterMarketOpen("SPY", 30),
+                self.MonthlyReport
+            )
+
+            # Initialize tracking variables for defensive programming
             self._warmup_completed = False
             self._first_rebalance_attempted = False
             self._rollover_events_count = 0
             self._algorithm_start_time = self.Time
-            
-            # Step 1: Add futures first (critical for QC)
-            self.Log("Step 1: Adding futures contracts...")
-            self.futures_symbols = []
-            self._add_core_futures()
-            
-            # Step 2: Initialize configuration management
-            self.Log("Step 2: Initializing configuration management...")
-            try:
-                self.config_manager = AlgorithmConfigManager(self)
-                self.config = self.config_manager.load_and_validate_config(variant="full")
-                self.Log("SUCCESS: Configuration manager initialized")
-                
-                # CRITICAL: Validate complete configuration before proceeding
-                self.Log("Step 2.1: Validating complete configuration...")
-                self.config_manager.validate_complete_configuration()
-                self.Log("SUCCESS: Complete configuration validated")
-                
-                # CRITICAL: Generate and log configuration audit report
-                self.Log("Step 2.2: Generating configuration audit report...")
-                audit_report = self.config_manager.get_config_audit_report()
-                
-                # Log the audit report (split into chunks to avoid QC log limits)
-                report_lines = audit_report.split('\n')
-                for i in range(0, len(report_lines), 10):  # Log 10 lines at a time
-                    chunk = '\n'.join(report_lines[i:i+10])
-                    self.Log(chunk)
-                
-                self.Log("SUCCESS: Configuration audit report generated")
-                
-            except Exception as e:
-                # CRITICAL: Do not use fallback configuration for trading
-                error_msg = f"CRITICAL CONFIGURATION FAILURE: {str(e)}"
-                self.Error(error_msg)
-                self.Error("SECURITY POLICY: No fallback trading configurations allowed")
-                self.Error("STOPPING ALGORITHM: Cannot trade with invalid configuration")
-                
-                # Log the specific configuration issue for debugging
-                self.Error("Configuration loading failed. This could be due to:")
-                self.Error("1. Missing or corrupted configuration files")
-                self.Error("2. Invalid configuration structure")
-                self.Error("3. Import path issues in QuantConnect cloud")
-                self.Error("4. Configuration validation failures")
-                
-                # SECURITY: Emergency fallback only prevents crashes - does not trade
-                self.Error("Initializing crash-prevention mode (NO TRADING)")
-                self._emergency_fallback_initialization()
-                return
-            
-            # Step 2.5: Initialize QuantConnect Native Features
-            self.Log("Step 2.5: Initializing QuantConnect native features...")
-            self._initialize_qc_native_features()
-            
-            # Step 3: Initialize universe management
-            self.Log("Step 3: Initializing universe management...")
-            try:
-                # Create futures manager (required by strategy loader)
-                self.futures_manager = FuturesManager(self, self.config_manager)
-                self.futures_manager.initialize_universe()
-                self.Log("SUCCESS: Futures manager initialized")
-                
-                # Create universe helper for additional data
-                universe_helper = UniverseHelpers(self, self.config_manager)
-                self.universe_data = universe_helper.initialize_universe()
-                self.Log("SUCCESS: Universe management initialized")
-            except Exception as e:
-                self.Log(f"Using minimal universe management: {str(e)}")
-                # Create minimal futures manager as fallback
-                class MinimalFuturesManager:
-                    def __init__(self, algorithm): self.algorithm = algorithm
-                    def get_liquid_symbols(self): return ['ES', 'NQ', 'ZN']
-                
-                self.futures_manager = MinimalFuturesManager(self)
-                self.universe_data = {'tickers': ['ES', 'NQ', 'ZN'], 'symbols': self.futures_symbols}
-            
-            # Step 4: Initialize orchestrator
-            self.Log("Step 4: Initializing three-layer orchestrator...")
-            try:
-                self.orchestrator = ThreeLayerOrchestrator(self, self.config_manager)
-                self.orchestrator.initialize_system()
-                self.Log("SUCCESS: Orchestrator initialized")
-            except Exception as e:
-                self.Log(f"Using minimal orchestrator: {str(e)}")
-                # Create minimal orchestrator as fallback
-                class MinimalOrchestrator:
-                    def __init__(self, algorithm): self.algorithm = algorithm
-                    def initialize_system(self): pass
-                    def OnSecuritiesChanged(self, changes): pass
-                    def update_with_data(self, slice): pass
-                    def update_during_warmup(self, slice): pass
-                
-                self.orchestrator = MinimalOrchestrator(self)
-            
-            # Step 5: Initialize execution manager
-            self.Log("Step 5: Initializing execution manager...")
-            try:
-                self.execution_manager = PortfolioExecutionManager(self, self.config_manager)
-                self.Log("SUCCESS: Execution manager initialized")
-            except Exception as e:
-                self.Log(f"Using minimal execution manager: {str(e)}")
-                # Create minimal execution manager as fallback
-                class MinimalExecutionManager:
-                    def __init__(self, algorithm): self.algorithm = algorithm
-                
-                self.execution_manager = MinimalExecutionManager(self)
-            
-            # Step 6: Initialize data integrity checker (CRITICAL FOR PRIORITY 2 FUTURES)
-            self.Log("Step 6: Initializing data integrity checker...")
-            try:
-                from components.data_integrity_checker import DataIntegrityChecker
-                self.data_integrity_checker = DataIntegrityChecker(self)
-                self.Log("SUCCESS: Data integrity checker initialized")
-            except Exception as e:
-                self.Log(f"Warning: Data integrity checker failed: {str(e)}")
-                self.data_integrity_checker = None
-                self.Log("WARNING: Data validation will be basic only")
-            
-            # Step 6b: Initialize bad data position manager (NEW TARGETED APPROACH)
-            self.Log("Step 6b: Initializing bad data position manager...")
-            try:
-                from components.bad_data_position_manager import BadDataPositionManager
-                self.bad_data_position_manager = BadDataPositionManager(self, self.config_manager)
-                self.Log("SUCCESS: Bad data position manager initialized")
-            except Exception as e:
-                self.Log(f"Warning: Bad data position manager failed: {str(e)}")
-                self.bad_data_position_manager = None
-            
-            # Step 6c: Initialize QC native contract resolver (FIXES /ZN vs ZN mapping issues)
-            self.Log("Step 6c: Initializing QC native contract resolver...")
-            try:
-                from components.qc_native_contract_resolver import QCNativeContractResolver
-                self.contract_resolver = QCNativeContractResolver(self)
-                self.Log("SUCCESS: QC native contract resolver initialized")
-            except Exception as e:
-                self.Log(f"Warning: QC native contract resolver failed: {str(e)}")
-                self.contract_resolver = None
-            
-            # Step 7: Initialize system reporter
-            self.Log("Step 7: Initializing system reporter...")
-            try:
-                self.system_reporter = SystemReporter(self, self.config_manager)
-                self.Log("SUCCESS: System reporter initialized")
-            except Exception as e:
-                self.Log(f"Using minimal system reporter: {str(e)}")
-                # Create minimal system reporter as fallback
-                class MinimalSystemReporter:
-                    def __init__(self, algorithm): self.algorithm = algorithm
-                    def track_rollover_cost(self, old_symbol, new_symbol, quantity): pass
-                
-                self.system_reporter = MinimalSystemReporter(self)
-            
-            # Step 8: Schedule rebalancing
-            self.Log("Step 8: Scheduling rebalancing...")
-            self._schedule_rebalancing()
-            
-            self.Log("="*80)
-            self.Log("THREE-LAYER CTA SYSTEM INITIALIZATION COMPLETE")
-            self.Log("="*80)
+
+            self.Log("=" * 80)
+            self.Log("THREE-LAYER CTA PORTFOLIO ALGORITHM INITIALIZED SUCCESSFULLY")
+            self.Log("=" * 80)
             
         except Exception as e:
-            self.Error(f"CRITICAL ERROR in Initialize: {str(e)}")
-            # Emergency fallback initialization
-            self._emergency_fallback_initialization()
+            self.Error(f"CRITICAL ERROR during initialization: {str(e)}")
+            raise
+
+    def _setup_enhanced_warmup(self):
+        """
+        Setup QC's native warm-up system based on strategy requirements and QC primer.
+        Implements proper warm-up period calculation and configuration.
+        """
+        try:
+            warmup_config = self.config_manager.get_warmup_config()
+            
+            if not warmup_config.get('enabled', False):
+                self.Log("WARMUP: Disabled in configuration")
+                return
+            
+            # Calculate required warm-up period based on enabled strategies
+            warmup_days = self.config_manager.calculate_max_warmup_needed()
+            
+            if warmup_days <= 0:
+                self.Log("WARMUP: No warm-up required")
+                return
+            
+            # Use QC's native warm-up system
+            warmup_method = warmup_config.get('method', 'time_based')
+            warmup_resolution = getattr(Resolution, warmup_config.get('resolution', 'Daily'))
+            
+            if warmup_method == 'time_based':
+                # Time-based warm-up (recommended for CTA strategies)
+                warmup_period = timedelta(days=warmup_days)
+                self.SetWarmUp(warmup_period, warmup_resolution)
+                self.Log(f"WARMUP: Set time-based warm-up for {warmup_days} days at {warmup_config.get('resolution', 'Daily')} resolution")
+            else:
+                # Bar-count based warm-up
+                self.SetWarmUp(warmup_days, warmup_resolution)
+                self.Log(f"WARMUP: Set bar-count warm-up for {warmup_days} bars at {warmup_config.get('resolution', 'Daily')} resolution")
+            
+            # Enable automatic indicator warm-up
+            self.Settings.AutomaticIndicatorWarmUp = True
+            self.Log("WARMUP: Enabled automatic indicator warm-up")
+            
+            # Store warm-up info for progress tracking
+            self._warmup_config = warmup_config
+            self._warmup_start_time = None
+            self._warmup_total_days = warmup_days
+            
+            self.Log("=" * 60)
+            self.Log("ENHANCED WARM-UP SYSTEM CONFIGURED")
+            self.Log(f"Method: {warmup_method}")
+            self.Log(f"Period: {warmup_days} days")
+            self.Log(f"Resolution: {warmup_config.get('resolution', 'Daily')}")
+            self.Log(f"Automatic Indicators: Enabled")
+            
+            # Log strategy-specific requirements
+            progress_info = self.config_manager.get_warmup_progress_info()
+            enabled_strategies = progress_info.get('enabled_strategies', [])
+            self.Log(f"Enabled Strategies: {enabled_strategies}")
+            
+            for strategy_name in enabled_strategies:
+                strategy_config = self.config_manager.get_strategy_config(strategy_name)
+                strategy_warmup = strategy_config.get('warmup_config', {})
+                required_days = strategy_warmup.get('required_days', 0)
+                if required_days > 0:
+                    self.Log(f"  - {strategy_name}: {required_days} days required")
+            
+            self.Log("=" * 60)
+            
+        except Exception as e:
+            self.Error(f"Failed to setup enhanced warm-up: {str(e)}")
+            # Continue without warm-up rather than failing completely
+            self.Log("WARNING: Continuing without warm-up due to setup error")
+
+    def OnWarmupFinished(self):
+        """
+        QC's native warm-up completion callback.
+        Validates that all indicators and strategies are ready for trading.
+        """
+        try:
+            self.Log("=" * 80)
+            self.Log("WARM-UP PERIOD COMPLETED - VALIDATING SYSTEM READINESS")
+            self.Log("=" * 80)
+            
+            # Mark warm-up as completed
+            self._warmup_completed = True
+            
+            # Get warm-up configuration
+            warmup_config = self.config_manager.get_warmup_config()
+            
+            # Validate indicators are ready (if enabled)
+            if warmup_config.get('validate_indicators_ready', True):
+                self._validate_indicators_ready()
+            
+            # Validate strategies are ready
+            self._validate_strategies_ready()
+            
+            # Validate universe is ready
+            self._validate_universe_ready()
+            
+            # Log system status
+            self._log_warmup_completion_status()
+            
+            # Optional: Trigger immediate test rebalance to verify system
+            if warmup_config.get('test_rebalance_on_completion', False):
+                self.Log("TESTING: Triggering immediate rebalance to test system...")
+                try:
+                    self.WeeklyRebalance()
+                except Exception as test_e:
+                    self.Error(f"WARMUP TEST FAILED: {str(test_e)}")
+            
+            self.Log("=" * 80)
+            self.Log("SYSTEM IS READY FOR LIVE TRADING")
+            self.Log("=" * 80)
+            
+        except Exception as e:
+            self.Error(f"Error in OnWarmupFinished: {str(e)}")
+            # Don't raise - allow trading to continue even if validation has issues
+
+    def _validate_indicators_ready(self):
+        """Validate that all required indicators are ready after warm-up."""
+        try:
+            enabled_strategies = self.config_manager.get_enabled_strategies()
+            
+            for strategy_name in enabled_strategies:
+                indicator_ready = self.config_manager.validate_warmup_indicators(strategy_name)
+                if indicator_ready:
+                    self.Log(f"WARMUP VALIDATION: {strategy_name} indicators ready")
+                else:
+                    self.Log(f"WARMUP WARNING: {strategy_name} indicators may not be ready")
+                    
+        except Exception as e:
+            self.Error(f"Failed to validate indicators: {str(e)}")
+
+    def _validate_strategies_ready(self):
+        """Validate that all strategies are ready for trading."""
+        try:
+            if hasattr(self, 'orchestrator') and self.orchestrator:
+                strategies_ready = self.orchestrator.validate_strategies_ready()
+                self.Log(f"WARMUP VALIDATION: Strategies ready: {strategies_ready}")
+            else:
+                self.Log("WARMUP WARNING: Orchestrator not available for strategy validation")
+                
+        except Exception as e:
+            self.Error(f"Failed to validate strategies: {str(e)}")
+
+    def _validate_universe_ready(self):
+        """Validate that the universe is ready with liquid symbols."""
+        try:
+            if hasattr(self, 'universe_manager') and self.universe_manager:
+                # Get liquid symbols after warm-up (no slice needed for validation)
+                liquid_symbols = self.universe_manager.get_liquid_symbols()
+                self.Log(f"WARMUP VALIDATION: {len(liquid_symbols)} liquid symbols available")
+                
+                if len(liquid_symbols) == 0:
+                    self.Log("WARMUP WARNING: No liquid symbols found - trading may be limited")
+                else:
+                    # Log sample of liquid symbols
+                    sample_symbols = list(liquid_symbols)[:5]
+                    self.Log(f"WARMUP VALIDATION: Sample liquid symbols: {sample_symbols}")
+            else:
+                self.Log("WARMUP WARNING: Universe manager not available for validation")
+                
+        except Exception as e:
+            self.Error(f"Failed to validate universe: {str(e)}")
+
+    def _log_warmup_completion_status(self):
+        """Log comprehensive warm-up completion status."""
+        try:
+            # Algorithm status
+            self.Log(f"Portfolio Value: ${self.Portfolio.TotalPortfolioValue:,.2f}")
+            self.Log(f"Trading Start Time: {self.Time}")
+            
+            # Warm-up timing
+            if hasattr(self, '_warmup_start_time') and self._warmup_start_time:
+                warmup_duration = self.Time - self._warmup_start_time
+                self.Log(f"Warm-up Duration: {warmup_duration}")
+            
+            # Data status
+            total_securities = len(self.Securities)
+            self.Log(f"Total Securities: {total_securities}")
+            
+            # Strategy status
+            enabled_strategies = self.config_manager.get_enabled_strategies()
+            self.Log(f"Enabled Strategies: {list(enabled_strategies.keys())}")
+            
+        except Exception as e:
+            self.Error(f"Failed to log warmup completion status: {str(e)}")
+
+    def _log_warmup_progress(self):
+        """Log warm-up progress periodically."""
+        try:
+            if hasattr(self, '_warmup_start_time') and self._warmup_start_time:
+                elapsed = self.Time - self._warmup_start_time
+                total_days = getattr(self, '_warmup_total_days', 0)
+                
+                if total_days > 0:
+                    progress = min(100, (elapsed.days / total_days) * 100)
+                    self.Log(f"WARMUP PROGRESS: {progress:.1f}% complete ({elapsed.days}/{total_days} days)")
+                else:
+                    self.Log(f"WARMUP PROGRESS: {elapsed.days} days elapsed")
+            else:
+                self.Log("WARMUP PROGRESS: Tracking not initialized")
+                
+        except Exception as e:
+            self.Error(f"Failed to log warmup progress: {str(e)}")
+
+    def OnData(self, slice):
+        """
+        Handle market data updates with ENHANCED warm-up awareness and futures chain analysis.
+        Implements proper QC warm-up patterns from the primer.
+        """
+        try:
+            # Defensive check: Initialize tracking variables if not already set
+            if not hasattr(self, '_warmup_completed'):
+                self._warmup_completed = False
+                self._first_rebalance_attempted = False
+                self._rollover_events_count = 0
+                self._algorithm_start_time = self.Time
+                self.Log("WARNING: Tracking variables initialized in OnData (should have been in Initialize)")
+            
+            # QC WARM-UP HANDLING (BASED ON PRIMER)
+            if self.IsWarmingUp:
+                # During warm-up: Only update components for state building, NO TRADING
+                self._handle_warmup_data(slice)
+                return
+            
+            # POST WARM-UP: Normal trading logic
+            if not self._warmup_completed:
+                self._warmup_completed = True
+                self._handle_warmup_completion()
+            
+            # NORMAL OPERATION: Process data with full validation
+            self._handle_normal_trading_data(slice)
+                
+        except Exception as e:
+            self.Error(f"Error in OnData: {str(e)}")
+
+    def _handle_warmup_data(self, slice):
+        """
+        Handle data during warm-up period with PROPER futures chain passing.
+        
+        During warm-up: Update indicators and build state, but NO TRADING.
+        CRITICAL: Pass slice to all components that need futures chain analysis.
+        """
+        try:
+            # Track warm-up progress
+            if not hasattr(self, '_warmup_start_time') or not self._warmup_start_time:
+                self._warmup_start_time = self.Time
+                self.Log("WARMUP: First data received - starting warm-up tracking")
+            
+            # CRITICAL: Pass slice to universe manager for futures chain analysis
+            if hasattr(self, 'universe_manager') and self.universe_manager:
+                self.universe_manager.update_during_warmup(slice)
+            
+            # Update orchestrator with slice during warm-up
+            if hasattr(self, 'orchestrator') and self.orchestrator:
+                self.orchestrator.update_during_warmup(slice)
+            
+            # Handle rollover events during warm-up (positions don't exist yet, but track for analysis)
+            if hasattr(slice, 'SymbolChangedEvents') and slice.SymbolChangedEvents:
+                for symbolChanged in slice.SymbolChangedEvents.Values:
+                    self._rollover_events_count += 1
+                    self.Log(f"WARMUP ROLLOVER: {symbolChanged.OldSymbol} -> {symbolChanged.NewSymbol} "
+                           f"(Event #{self._rollover_events_count})")
+            
+            # Periodic warm-up progress logging
+            if self.Time.hour == 0 and self.Time.minute == 0:  # Once per day
+                self._log_warmup_progress()
+                
+        except Exception as e:
+            self.Error(f"Error handling warmup data: {str(e)}")
+
+    def _handle_warmup_completion(self):
+        """Handle the transition from warm-up to normal trading."""
+        try:
+            # ENHANCED WARMUP COMPLETION LOGGING
+            warmup_info = self._get_warmup_status()
+            self.Log("="*80)
+            self.Log("WARMUP COMPLETED - SYSTEM NOW READY FOR TRADING!")
+            self.Log(f"WARMUP INFO: {warmup_info}")
+            self.Log(f"TRADING START DATE: {self.Time}")
+            self.Log(f"PORTFOLIO VALUE: ${self.Portfolio.TotalPortfolioValue:,.2f}")
+            self.Log("="*80)
+            
+            # IMMEDIATE TEST: Trigger first rebalancing to test the system
+            self.Log("="*50)
+            self.Log("WARMUP COMPLETE - TESTING IMMEDIATE REBALANCING")
+            self.Log("NOTE: Using daily data resolution - rebalancing scheduled for market close")
+            self.Log("="*50)
+            try:
+                # Force immediate rebalancing test (will use current daily bar data)
+                self.Log("FORCING IMMEDIATE REBALANCING TEST...")
+                self.WeeklyRebalance()
+                
+                # Note about proper scheduling
+                self.Log("SCHEDULING INFO: Future rebalancing will occur at market close (end of week)")
+                self.Log("This prevents stale fills that occur with intraday scheduling on daily data")
+                
+            except Exception as test_e:
+                self.Error(f"IMMEDIATE REBALANCE TEST FAILED: {str(test_e)}")
+            self.Log("="*50)
+            
+        except Exception as e:
+            self.Error(f"Error handling warmup completion: {str(e)}")
+
+    def _handle_normal_trading_data(self, slice):
+        """
+        Handle data during normal trading using unified data interface (Phase 3).
+        
+        STREAMLINED: Uses unified data interface instead of direct slice manipulation.
+        """
+        try:
+            # Handle rollover events first (before trading logic)
+            if hasattr(slice, 'SymbolChangedEvents') and slice.SymbolChangedEvents:
+                for symbolChanged in slice.SymbolChangedEvents.Values:
+                    self._rollover_events_count += 1
+                    self.Log(f"ROLLOVER: {symbolChanged.OldSymbol} -> {symbolChanged.NewSymbol} "
+                           f"(Event #{self._rollover_events_count})")
+            
+            # PHASE 3: Use unified data interface for standardized data access
+            if hasattr(self, 'unified_data') and self.unified_data:
+                # Get standardized slice data through unified interface
+                unified_slice_data = self.unified_data.get_slice_data(
+                    slice, 
+                    symbols=list(self.shared_symbols.keys()) if hasattr(self, 'shared_symbols') else None,
+                    data_types=['bars', 'chains']
+                )
+                
+                # Pass unified data to orchestrator
+                if hasattr(self, 'orchestrator') and self.orchestrator:
+                    self.orchestrator.update_with_unified_data(unified_slice_data, slice)
+                
+                # Pass unified data to universe manager for liquidity analysis
+                if hasattr(self, 'universe_manager') and self.universe_manager:
+                    self.universe_manager.update_with_unified_data(unified_slice_data, slice)
+                
+                # Update system reporter with unified data
+                if hasattr(self, 'system_reporter') and self.system_reporter:
+                    self.system_reporter.update_with_unified_data(unified_slice_data, slice)
+            else:
+                # Fallback to direct slice passing (backward compatibility)
+                self.Log("WARNING: Unified data interface not available, using direct slice access")
+                
+                if hasattr(self, 'orchestrator') and self.orchestrator:
+                    self.orchestrator.update_with_data(slice)
+                
+                if hasattr(self, 'universe_manager') and self.universe_manager:
+                    self.universe_manager.update_with_slice(slice)
+                
+                if hasattr(self, 'system_reporter') and self.system_reporter:
+                    self.system_reporter.update_with_slice(slice)
+                
+        except Exception as e:
+            self.Error(f"Error handling normal trading data: {str(e)}")
+
+    def _get_warmup_status(self):
+        """Get current warmup status information."""
+        try:
+            warmup_info = self.config_manager.get_warmup_progress_info()
+            
+            if warmup_info.get('enabled', False):
+                return f"Current: {self.Time.strftime('%Y-%m-%d')}, IsWarmingUp: {self.IsWarmingUp}, " \
+                       f"MaxDays: {warmup_info.get('max_days_needed', 'N/A')}, " \
+                       f"Method: {warmup_info.get('method', 'N/A')}"
+            else:
+                return f"Current: {self.Time.strftime('%Y-%m-%d')}, IsWarmingUp: {self.IsWarmingUp} (warmup disabled)"
+        except Exception as e:
+            return f"Current: {self.Time.strftime('%Y-%m-%d')}, IsWarmingUp: {self.IsWarmingUp} (error: {str(e)})"
     
     def _add_core_futures(self):
         """Add core futures contracts with error handling."""
@@ -252,30 +535,37 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
     def _schedule_rebalancing(self):
         """Schedule weekly and monthly rebalancing compatible with daily data resolution."""
         try:
-            # Weekly rebalancing at END OF WEEK (pure daily scheduling - no time specification)
-            # QuantConnect will execute when daily data is available
+            # CRITICAL: For daily data resolution, use END-OF-DAY scheduling to avoid stale fills
+            # Daily bars are only complete at end of day (~6 PM for futures)
+            
+            # Weekly rebalancing at END OF WEEK - use end of day timing
+            # This ensures we have the complete daily bar with actual closing prices
             self.Schedule.On(
                 self.DateRules.WeekEnd(), 
+                self.TimeRules.At(23, 30),  # 11:30 PM - after daily bar is complete
                 self.WeeklyRebalance
             )
             
-            # Monthly performance reporting at month end (pure daily scheduling)
+            # Monthly performance reporting at month end - use end of day timing
             self.Schedule.On(
                 self.DateRules.MonthEnd(),
+                self.TimeRules.At(23, 45),  # 11:45 PM - after daily bar is complete
                 self.MonthlyReporting
             )
             
-            # Daily continuous contract validation (pure daily scheduling)
+            # Daily continuous contract validation - use end of day timing
             self.Schedule.On(
                 self.DateRules.EveryDay(),
+                self.TimeRules.At(23, 0),   # 11:00 PM - after daily bar is complete
                 self.ValidateContinuousContracts
             )
             
-            self.Log("Rebalancing schedule configured for DAILY DATA RESOLUTION:")
-            self.Log("  - Weekly: End of week (pure daily scheduling - no time specification)")
-            self.Log("  - Monthly: Month end (pure daily scheduling - no time specification)")
-            self.Log("  - Daily: Contract validation (pure daily scheduling - no time specification)")
-            self.Log("  - QuantConnect will execute when daily data is naturally available")
+            self.Log("Rebalancing schedule configured for DAILY DATA RESOLUTION (END-OF-DAY):")
+            self.Log("  - Weekly: End of week at 11:30 PM (after daily bar completion)")
+            self.Log("  - Monthly: Month end at 11:45 PM (after daily bar completion)")
+            self.Log("  - Daily: Contract validation at 11:00 PM (after daily bar completion)")
+            self.Log("  - PREVENTS STALE FILLS: Uses actual daily closing prices, not previous day's prices")
+            self.Log("  - Daily bars complete around 6 PM for futures, scheduling at 11+ PM ensures fresh data")
             
         except Exception as e:
             self.Error(f"Failed to schedule rebalancing: {str(e)}")
@@ -517,393 +807,6 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
         
         return False
     
-    def OnData(self, slice):
-        """Handle market data updates with targeted position management for bad data."""
-        try:
-            # Defensive check: Initialize tracking variables if not already set
-            if not hasattr(self, '_warmup_completed'):
-                self._warmup_completed = False
-                self._first_rebalance_attempted = False
-                self._rollover_events_count = 0
-                self._algorithm_start_time = self.Time
-                self.Log("WARNING: Tracking variables initialized in OnData (should have been in Initialize)")
-            
-            if self.IsWarmingUp:
-                if not self._warmup_completed:
-                    # Update components during warmup with basic validation
-                    if hasattr(self, 'orchestrator'):
-                        validated_slice = self._validate_slice_data_basic(slice)
-                        if validated_slice:
-                            self.orchestrator.update_during_warmup(validated_slice)
-                return
-
-            if not self._warmup_completed:
-                self._warmup_completed = True
-                self.Log("Warmup completed - System ready for trading")
-                
-                # IMMEDIATE TEST: Trigger first rebalancing to test the system
-                self.Log("="*50)
-                self.Log("WARMUP COMPLETE - TESTING IMMEDIATE REBALANCING")
-                self.Log("NOTE: Using daily data resolution - rebalancing scheduled for market close")
-                self.Log("="*50)
-                try:
-                    # Force immediate rebalancing test (will use current daily bar data)
-                    self.Log("FORCING IMMEDIATE REBALANCING TEST...")
-                    self.WeeklyRebalance()
-                    
-                    # Note about proper scheduling
-                    self.Log("SCHEDULING INFO: Future rebalancing will occur at market close (end of week)")
-                    self.Log("This prevents stale fills that occur with intraday scheduling on daily data")
-                    
-                except Exception as test_e:
-                    self.Error(f"IMMEDIATE REBALANCE TEST FAILED: {str(test_e)}")
-                self.Log("="*50)
-                
-            # TARGETED APPROACH: Basic validation + position management for bad data
-            validated_slice = self._validate_slice_data_basic(slice)
-            
-            if not validated_slice:
-                # Skip this update if no valid data
-                return
-
-            # Use data integrity checker for quarantine logic (reports to position manager)
-            if hasattr(self, 'data_integrity_checker') and self.data_integrity_checker:
-                final_validated_slice = self.data_integrity_checker.validate_slice(validated_slice)
-                if final_validated_slice:
-                    validated_slice = final_validated_slice
-
-            # Update components with validated data
-            if validated_slice and hasattr(self, 'orchestrator'):
-                self.orchestrator.update_with_data(validated_slice)
-                
-        except Exception as e:
-            self.Error(f"Error in OnData: {str(e)}")
-    
-    def _validate_slice_data_basic(self, slice):
-        """
-        BASIC slice validation - just check if slice has any usable data
-        Don't try to modify the slice, just validate it's safe to use
-        """
-        try:
-            # Check if we have any data in the slice
-            if not slice or not hasattr(slice, 'Keys') or not slice.Keys:
-                return None
-            
-            # Count valid symbols in this slice
-            valid_symbol_count = 0
-            
-            # Check each symbol in the slice
-            for symbol in slice.Keys:
-                # Check if symbol exists in our securities
-                if symbol not in self.Securities:
-                    continue
-                
-                security = self.Securities[symbol]
-                
-                # Basic QC built-in checks
-                if not (security.HasData and security.IsTradable):
-                    continue
-                
-                # Check if symbol has valid data in this slice
-                has_valid_data = False
-                
-                # Check bar data
-                if hasattr(slice, 'Bars') and slice.Bars and symbol in slice.Bars:
-                    try:
-                        bar = slice.Bars[symbol]
-                        if bar and hasattr(bar, 'Close') and bar.Close > 0:
-                            has_valid_data = True
-                    except:
-                        pass
-                
-                # Check quote data
-                if hasattr(slice, 'QuoteBars') and slice.QuoteBars and symbol in slice.QuoteBars:
-                    try:
-                        quote = slice.QuoteBars[symbol]
-                        if (quote and hasattr(quote, 'Bid') and hasattr(quote, 'Ask') and
-                            hasattr(quote.Bid, 'Close') and hasattr(quote.Ask, 'Close') and
-                            quote.Bid.Close > 0 and quote.Ask.Close > 0):
-                            has_valid_data = True
-                    except:
-                        pass
-                
-                if has_valid_data:
-                    valid_symbol_count += 1
-            
-            # Return slice if we have at least one valid symbol, None otherwise
-            if valid_symbol_count > 0:
-                return slice
-            else:
-                return None
-            
-        except Exception as e:
-            self.Error(f"Error in basic slice validation: {str(e)}")
-            # Return slice on validation error to avoid blocking all data
-            return slice
-    
-    def _validate_slice_data_aggressive(self, slice):
-        """
-        AGGRESSIVE slice validation - Only allow symbols with confirmed valid data
-        This prevents the 'security does not have accurate price' errors
-        """
-        try:
-            # Track valid symbols for this slice
-            valid_symbols = set()
-            
-            # STEP 1: Pre-filter symbols using QC's built-in validation
-            for symbol in slice.Keys:
-                # Use QC's slice.Contains() method - CRITICAL check
-                if not slice.Contains(symbol):
-                    continue
-                
-                # Check if symbol exists in our securities
-                if symbol not in self.Securities:
-                    continue
-                
-                security = self.Securities[symbol]
-                
-                # AGGRESSIVE QC built-in checks
-                if not (security.HasData and security.IsTradable and 
-                        hasattr(security, 'Price') and security.Price > 0):
-                    continue
-                
-                # Symbol passed all checks
-                valid_symbols.add(symbol)
-            
-            if not valid_symbols:
-                # No valid symbols in this slice
-                return None
-            
-            # STEP 2: Validate bar data for valid symbols only
-            has_valid_data = False
-            
-            if hasattr(slice, 'Bars') and slice.Bars:
-                valid_bars = {}
-                for symbol in valid_symbols:
-                    if symbol in slice.Bars:
-                        bar = slice.Bars[symbol]
-                        if self._is_bar_data_valid_aggressive(symbol, bar):
-                            valid_bars[symbol] = bar
-                            has_valid_data = True
-                        else:
-                            # Remove from valid symbols if bar data is bad
-                            valid_symbols.discard(symbol)
-                            # Occasional logging to avoid spam
-                            if hasattr(self, 'Time') and self.Time.day == 1 and self.Time.hour == 16:
-                                ticker = str(symbol).replace('/', '')
-                                self.Debug(f"Skipping invalid bar data for {ticker}")
-                
-                # Replace slice bars with only valid ones
-                if valid_bars:
-                    slice.Bars.clear()
-                    for symbol, bar in valid_bars.items():
-                        slice.Bars[symbol] = bar
-            
-            # STEP 3: Validate quote data for valid symbols only
-            if hasattr(slice, 'QuoteBars') and slice.QuoteBars:
-                valid_quotes = {}
-                for symbol in valid_symbols:
-                    if symbol in slice.QuoteBars:
-                        quote = slice.QuoteBars[symbol]
-                        if self._is_quote_data_valid_aggressive(symbol, quote):
-                            valid_quotes[symbol] = quote
-                            has_valid_data = True
-                        else:
-                            # Remove from valid symbols if quote data is bad
-                            valid_symbols.discard(symbol)
-                
-                # Replace slice quotes with only valid ones
-                if valid_quotes:
-                    slice.QuoteBars.clear()
-                    for symbol, quote in valid_quotes.items():
-                        slice.QuoteBars[symbol] = quote
-            
-            # Only return slice if we have confirmed valid data
-            return slice if has_valid_data and valid_symbols else None
-            
-        except Exception as e:
-            self.Error(f"Error in aggressive slice validation: {str(e)}")
-            return None  # Return None on validation error to be safe
-    
-    def _is_bar_data_valid_aggressive(self, symbol, bar):
-        """
-        AGGRESSIVE bar validation - Prevents 'security does not have accurate price' errors
-        More strict than basic validation to ensure data quality
-        """
-        try:
-            # CRITICAL: Check if symbol exists in securities (QC managed)
-            if symbol not in self.Securities:
-                return False
-            
-            security = self.Securities[symbol]
-            
-            # AGGRESSIVE QC built-in validation
-            if not (security.HasData and security.IsTradable):
-                return False
-            
-            # CRITICAL: Verify security has valid price
-            if not hasattr(security, 'Price') or security.Price is None or security.Price <= 0:
-                return False
-            
-            # AGGRESSIVE bar data validation
-            if not bar:
-                return False
-            
-            # Check all OHLC values are positive and reasonable
-            if not (bar.Open > 0 and bar.High > 0 and bar.Low > 0 and bar.Close > 0):
-                return False
-            
-            # STRICT OHLC relationship validation
-            if bar.High < bar.Low:
-                return False
-            
-            if bar.Close < bar.Low or bar.Close > bar.High:
-                return False
-            
-            if bar.Open < bar.Low or bar.Open > bar.High:
-                return False
-            
-            # Additional sanity checks - prevent extreme price movements
-            if bar.High / bar.Low > 10:  # More than 10x price range in one bar
-                return False
-            
-            # Check volume if available (some futures may not have volume)
-            if hasattr(bar, 'Volume') and bar.Volume < 0:
-                return False
-            
-            return True
-            
-        except Exception as e:
-            return False
-    
-    def _is_bar_data_valid(self, symbol, bar):
-        """
-        LEGACY bar validation - kept for backward compatibility
-        Use _is_bar_data_valid_aggressive for new code
-        """
-        try:
-            # LEVERAGE QC'S BUILT-IN VALIDATION:
-            
-            # 1. Check if symbol exists in securities (QC managed)
-            if symbol not in self.Securities:
-                return False
-            
-            security = self.Securities[symbol]
-            
-            # 2. Use QC's HasData property instead of manual checks
-            if not security.HasData:
-                return False
-            
-            # 3. Use QC's IsTradable property
-            if not security.IsTradable:
-                return False
-            
-            # 4. Basic bar integrity (QC doesn't validate OHLC relationships)
-            if not bar or bar.Close <= 0 or bar.Open <= 0:
-                return False
-            
-            # 5. OHLC relationship validation (business logic QC doesn't provide)
-            if bar.High < bar.Low:
-                return False
-            
-            if bar.Close < bar.Low or bar.Close > bar.High:
-                return False
-            
-            if bar.Open < bar.Low or bar.Open > bar.High:
-                return False
-            
-            return True
-            
-        except Exception as e:
-            return False
-    
-    def _is_quote_data_valid_aggressive(self, symbol, quote):
-        """
-        AGGRESSIVE quote validation - Prevents trading errors with bad quote data
-        More strict validation to ensure data quality
-        """
-        try:
-            # CRITICAL: Check if symbol exists in securities (QC managed)
-            if symbol not in self.Securities:
-                return False
-            
-            security = self.Securities[symbol]
-            
-            # AGGRESSIVE QC built-in validation
-            if not (security.HasData and security.IsTradable):
-                return False
-            
-            # CRITICAL: Verify security has valid price
-            if not hasattr(security, 'Price') or security.Price is None or security.Price <= 0:
-                return False
-            
-            # AGGRESSIVE quote data validation
-            if not quote:
-                return False
-            
-            # Validate bid data
-            if not hasattr(quote, 'Bid') or not quote.Bid:
-                return False
-            
-            if not hasattr(quote.Bid, 'Close') or quote.Bid.Close <= 0:
-                return False
-            
-            # Validate ask data
-            if not hasattr(quote, 'Ask') or not quote.Ask:
-                return False
-            
-            if not hasattr(quote.Ask, 'Close') or quote.Ask.Close <= 0:
-                return False
-            
-            # STRICT bid/ask relationship validation
-            if quote.Bid.Close >= quote.Ask.Close:
-                return False
-            
-            # Additional sanity checks - prevent extreme spreads
-            spread_ratio = (quote.Ask.Close - quote.Bid.Close) / quote.Bid.Close
-            if spread_ratio > 0.1:  # More than 10% spread is suspicious
-                return False
-            
-            return True
-            
-        except Exception as e:
-            return False
-    
-    def _is_quote_data_valid(self, symbol, quote):
-        """
-        LEGACY quote validation - kept for backward compatibility
-        Use _is_quote_data_valid_aggressive for new code
-        """
-        try:
-            # LEVERAGE QC'S BUILT-IN VALIDATION:
-            
-            # 1. Check if symbol exists in securities (QC managed)
-            if symbol not in self.Securities:
-                return False
-            
-            security = self.Securities[symbol]
-            
-            # 2. Use QC's HasData property
-            if not security.HasData:
-                return False
-            
-            # 3. Use QC's IsTradable property
-            if not security.IsTradable:
-                return False
-            
-            # 4. Basic quote integrity (QC doesn't validate bid/ask relationships)
-            if not quote or quote.Bid.Close <= 0 or quote.Ask.Close <= 0:
-                return False
-            
-            # 5. Bid/Ask relationship validation (business logic QC doesn't provide)
-            if quote.Bid.Close > quote.Ask.Close:
-                return False
-            
-            return True
-            
-        except Exception as e:
-            return False
-    
     def WeeklyRebalance(self):
         """Execute weekly portfolio rebalancing."""
         try:
@@ -917,7 +820,8 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             
             # CRITICAL: Check if we're still warming up
             if self.IsWarmingUp:
-                self.Log(f"REBALANCE SKIPPED: Still warming up (current: {self.Time}, warmup: {self.IsWarmingUp})")
+                warmup_info = self._get_warmup_status()
+                self.Log(f"REBALANCE SKIPPED: Still warming up - {warmup_info}")
                 return
                 
             self.Log("="*50)

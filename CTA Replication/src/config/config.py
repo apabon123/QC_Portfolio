@@ -29,6 +29,7 @@ try:
         RISK_CONFIG,
         UNIVERSE_CONFIG,
         SYSTEM_CONFIG,
+        FUTURES_CHAIN_CONFIG,
         get_strategy_allowed_symbols,
         get_enabled_strategies,
         get_strategy_modules
@@ -55,6 +56,7 @@ except ImportError:
         RISK_CONFIG,
         UNIVERSE_CONFIG,
         SYSTEM_CONFIG,
+        FUTURES_CHAIN_CONFIG,
         get_strategy_allowed_symbols,
         get_enabled_strategies,
         get_strategy_modules
@@ -94,6 +96,7 @@ def get_full_config():
             **UNIVERSE_CONFIG,
             'futures_config': FUTURES_CONFIG  # Add technical futures config
         },
+        'futures_chain': FUTURES_CHAIN_CONFIG,  # NEW: Futures chain configuration
         
         # Execution and Plumbing Configuration
         'qc_native': QC_NATIVE_CONFIG,
@@ -262,25 +265,25 @@ def test_configuration_system():
     # Test main config assembly
     try:
         config = get_full_config()
-        print("✅ Main configuration assembly: SUCCESS")
+        print("Main configuration assembly: SUCCESS")
         print(f"   - Algorithm config: {bool(config.get('algorithm'))}")
         print(f"   - Strategy config: {len(config.get('strategies', {}))}")
         print(f"   - QC native config: {bool(config.get('qc_native'))}")
         print(f"   - Execution config: {bool(config.get('execution'))}")
     except Exception as e:
-        print(f"❌ Main configuration assembly: FAILED - {e}")
+        print(f"Main configuration assembly: FAILED - {e}")
     
     # Test strategy utilities
     try:
         enabled = get_enabled_strategies()
         modules = get_strategy_modules()
         info = get_strategy_info()
-        print("✅ Strategy utilities: SUCCESS")
+        print("Strategy utilities: SUCCESS")
         print(f"   - Enabled strategies: {enabled}")
         print(f"   - Strategy modules: {len(modules)}")
         print(f"   - Strategy info: {len(info)}")
     except Exception as e:
-        print(f"❌ Strategy utilities: FAILED - {e}")
+        print(f"Strategy utilities: FAILED - {e}")
     
     # Test configuration variants
     variants = ['conservative', 'aggressive', 'development', 'rollover_test']
@@ -295,19 +298,19 @@ def test_configuration_system():
             elif variant == 'rollover_test':
                 test_config = get_rollover_test_config()
             
-            print(f"✅ {variant} config: SUCCESS")
+            print(f"{variant} config: SUCCESS")
         except Exception as e:
-            print(f"❌ {variant} config: FAILED - {e}")
+            print(f"{variant} config: FAILED - {e}")
     
     # Test futures validation
     try:
         issues = validate_futures_config()
         if not issues:
-            print("✅ Futures configuration validation: SUCCESS")
+            print("Futures configuration validation: SUCCESS")
         else:
-            print(f"⚠️  Futures configuration issues: {issues}")
+            print(f"WARNING: Futures configuration issues: {issues}")
     except Exception as e:
-        print(f"❌ Futures validation: FAILED - {e}")
+        print(f"Futures validation: FAILED - {e}")
     
     print("\nConfiguration system test complete!")
 

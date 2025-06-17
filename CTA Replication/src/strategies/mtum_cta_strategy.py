@@ -209,62 +209,65 @@ class MTUMCTAStrategy(BaseStrategy):
         return (current_time.month != self.last_rebalance_date.month and
                 current_time.day <= 5)  # First 5 days of month
     
-    def generate_signals(self):
-        """Generate MTUM momentum signals across all liquid symbols."""
-        try:
-            signals = {}
-            liquid_symbols = self._get_liquid_symbols()
+    def generate_signals(self, slice=None):
+        """
+        Generate MTUM-style signals for all liquid symbols.
+        
+        Args:
+            slice: Optional data slice for futures chain analysis
             
-            if not liquid_symbols:
-                self.algorithm.Log(f"{self.name}: No liquid symbols for signal generation")
-                return signals
-            
-            # Calculate momentum scores for all symbols
-            momentum_scores = {}
-            for symbol in liquid_symbols:
-                if symbol not in self.symbol_data:
-                    continue
-                
-                symbol_data = self.symbol_data[symbol]
-                if not symbol_data.IsReady:
-                    continue
-                
-                try:
-                    # Calculate total return momentum (excluding recent period)
-                    total_momentum = 0
-                    valid_lookbacks = 0
-                    
-                    for lookback_months in self.config['momentum_lookbacks_months']:
-                        momentum = symbol_data.GetTotalReturn(lookback_months)
-                        if momentum is not None:
-                            total_momentum += momentum
-                            valid_lookbacks += 1
-                    
-                    if valid_lookbacks > 0:
-                        avg_momentum = total_momentum / valid_lookbacks
-                        momentum_scores[symbol] = avg_momentum
-                        
-                except Exception as e:
-                    self.algorithm.Error(f"{self.name}: Error processing {symbol}: {str(e)}")
-                    continue
-            
-            if momentum_scores:
-                # Standardize scores
-                standardized_scores = self._standardize_scores(momentum_scores)
-                
-                # Convert to position weights
-                signals = self._convert_scores_to_weights(standardized_scores)
-            
+        Returns:
+            dict: Symbol -> signal strength mapping
+        """
+        signals = {}
+        liquid_symbols = self._get_liquid_symbols(slice)
+        
+        if not liquid_symbols:
+            self.algorithm.Log(f"{self.name}: No liquid symbols for signal generation")
             return signals
+        
+        # Calculate momentum scores for all symbols
+        momentum_scores = {}
+        for symbol in liquid_symbols:
+            if symbol not in self.symbol_data:
+                continue
             
-        except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error generating signals: {str(e)}")
-            return {}
+            symbol_data = self.symbol_data[symbol]
+            if not symbol_data.IsReady:
+                continue
+            
+            try:
+                # Calculate total return momentum (excluding recent period)
+                total_momentum = 0
+                valid_lookbacks = 0
+                
+                for lookback_months in self.config['momentum_lookbacks_months']:
+                    momentum = symbol_data.GetTotalReturn(lookback_months)
+                    if momentum is not None:
+                        total_momentum += momentum
+                        valid_lookbacks += 1
+                
+                if valid_lookbacks > 0:
+                    avg_momentum = total_momentum / valid_lookbacks
+                    momentum_scores[symbol] = avg_momentum
+                    
+            except Exception as e:
+                self.algorithm.Error(f"{self.name}: Error processing {symbol}: {str(e)}")
+                continue
+        
+        if momentum_scores:
+            # Standardize scores
+            standardized_scores = self._standardize_scores(momentum_scores)
+            
+            # Convert to position weights
+            signals = self._convert_scores_to_weights(standardized_scores)
+        
+        return signals
     
-    def _get_liquid_symbols(self):
+    def _get_liquid_symbols(self, slice=None):
         """Get liquid symbols from futures manager."""
         if self.futures_manager and hasattr(self.futures_manager, 'get_liquid_symbols'):
-            return self.futures_manager.get_liquid_symbols()
+            return self.futures_manager.get_liquid_symbols(slice)
         return list(self.symbol_data.keys())
     
     def _standardize_scores(self, scores, clip_at=None):

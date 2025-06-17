@@ -24,7 +24,52 @@ ALGORITHM_CONFIG = {
     'timezone': 'America/New_York',         # Eastern time
     'benchmark': 'SPY',                     # Benchmark for comparison
     'brokerage_model': 'InteractiveBrokers', # Brokerage model
-    'warmup_period_days': 100,              # Reduced warmup to get trading started (was 756)
+    
+    # ENHANCED WARM-UP CONFIGURATION (BASED ON QC PRIMER)
+    'warmup': {
+        'enabled': True,                    # Enable QC's native warm-up system
+        'method': 'time_based',             # Use time-based warm-up (not bar count)
+        'auto_calculate_period': True,      # Calculate based on max strategy requirements
+        'minimum_days': 252,                # Minimum 1 year for any strategy
+        'resolution': 'Daily',              # Warm-up resolution (match main resolution)
+        'strategy_requirements': {
+            'KestnerCTA': 400,              # 52 weeks * 7 days + buffer = ~400 days
+            'MTUM_CTA': 756,                # 3 years for volatility = 252 * 3 days
+            'HMM_CTA': 90,                  # 3 months for regime detection
+        },
+        'buffer_multiplier': 1.2,           # Add 20% buffer to calculated period
+        'validate_indicators_ready': True,   # Validate all indicators are ready after warm-up
+        'log_warmup_progress': True,        # Log progress during warm-up
+    },
+    
+    # DEPRECATED - replaced by warmup config above
+    'warmup_period_days': 20,               # DEPRECATED: Use warmup.strategy_requirements instead
+}
+
+# =============================================================================
+# FUTURES CHAIN LIQUIDITY CONFIGURATION (NEW)
+# =============================================================================
+FUTURES_CHAIN_CONFIG = {
+    'liquidity_during_warmup': {
+        'enabled': True,                    # Enable chain-based liquidity checking during warm-up
+        'check_method': 'chain_analysis',   # Use FuturesChain objects for liquidity
+        'major_liquid_contracts': [         # Major liquid futures (assumed liquid during warm-up)
+            'ES', 'NQ', 'YM', 'RTY',       # Equity indices
+            'ZN', 'ZB', 'ZF', 'ZT',         # Interest rates
+            '6E', '6J', '6B', '6A',         # FX
+            'CL', 'GC', 'SI', 'HG'          # Commodities
+        ],
+        'fallback_to_major_list': True,     # If chain unavailable, use major list
+        'log_chain_analysis': True,         # Log detailed chain analysis
+    },
+    
+    'post_warmup_liquidity': {
+        'check_method': 'full_validation',  # Full IsTradable + HasData + Chain analysis
+        'min_volume': 1000,                 # Minimum daily volume
+        'min_open_interest': 50000,         # Minimum open interest
+        'max_bid_ask_spread': 0.001,        # Maximum bid-ask spread (0.1%)
+        'use_mapped_contract': True,        # Check liquidity of currently mapped contract
+    }
 }
 
 # =============================================================================
@@ -88,11 +133,21 @@ STRATEGY_CONFIGS = {
         'warmup_days': 400,                     # Strategy-specific warmup (based on max lookback of 52 weeks + buffer)
         'expected_sharpe': 0.8,                 # Historical Sharpe expectation
         'correlation_with_trend': 0.75,         # Expected correlation with SG Trend Index
+        
+        # WARMUP-SPECIFIC CONFIGURATION
+        'warmup_config': {
+            'required_days': 400,               # 52 weeks * 7 days + buffer
+            'indicator_validation': [           # List of indicators to validate post-warmup
+                'momentum_16w', 'momentum_32w', 'momentum_52w',
+                'volatility_90d'
+            ],
+            'min_data_points': 365,             # Minimum data points needed for reliable signals
+        }
     },
     
     # Strategy 2: MTUM CTA (Momentum futures adaptation)
     'MTUM_CTA': {
-        'enabled': True,                       # Set to False to disable without code changes
+        'enabled': False,                       # Set to False to disable without code changes
         'module': 'src.strategies.mtum_cta_strategy',          # File name (without .py)
         'class': 'MTUMCTAStrategy',             # Class name in the file
         'name': 'MTUM_CTA',                     # Display name
@@ -111,11 +166,20 @@ STRATEGY_CONFIGS = {
         'warmup_days': 252 * 3,                 # Strategy-specific warmup (3 years for volatility estimation)
         'expected_sharpe': 0.6,                 # Conservative Sharpe expectation
         'correlation_with_momentum': 0.7,       # Expected momentum factor correlation
+        
+        # WARMUP-SPECIFIC CONFIGURATION
+        'warmup_config': {
+            'required_days': 756,               # 3 years for volatility estimation
+            'indicator_validation': [
+                'momentum_6m', 'momentum_12m', 'volatility_3y'
+            ],
+            'min_data_points': 756,             # 3 years minimum
+        }
     },
     
     # Strategy 3: HMM CTA (Hidden Markov Model regime detection)
     'HMM_CTA': {
-        'enabled': True,                        # Enabled with QC plumbing fixes
+        'enabled': False,                        # Enabled with QC plumbing fixes
         'module': 'src.strategies.hmm_cta_strategy',           # File name (without .py)
         'class': 'HMMCTAStrategy',              # Class name in the file
         'name': 'HMM_CTA',                      # Display name
@@ -136,6 +200,15 @@ STRATEGY_CONFIGS = {
         'warmup_days': 80,                      # Strategy-specific warmup
         'expected_sharpe': 0.5,                 # Conservative expectation (regime strategy)
         'correlation_with_regime': 0.6,         # Expected regime factor correlation
+        
+        # WARMUP-SPECIFIC CONFIGURATION
+        'warmup_config': {
+            'required_days': 90,                # 3 months for regime detection
+            'indicator_validation': [
+                'hmm_model', 'regime_probabilities'
+            ],
+            'min_data_points': 90,              # 3 months minimum
+        }
     },
 }
 
@@ -198,15 +271,19 @@ RISK_CONFIG = {
     # Stop Loss Controls
     'daily_stop_loss': 0.2,                    # 20% daily portfolio stop loss
     'max_drawdown_stop': 0.75,                 # 75% maximum drawdown stop
-    
-    # Position Limits
-    'max_single_position': 10.00,              # 1000% maximum single futures position
-    'max_sector_exposure': 5.00,               # 500% maximum sector exposure
+    'max_single_position': 0.30,               # 30% maximum single position size (required by config manager)
     
     # Risk Monitoring
-    'risk_check_frequency': "daily",           # Daily risk monitoring
-    'correlation_monitoring': True,            # Monitor strategy correlations
-    'volatility_regime_detection': True,       # Adjust targets based on vol regime
+    'enable_position_size_limits': True,       # Enable individual position size limits
+    'max_individual_position': 0.30,           # 30% maximum individual position size
+    'correlation_risk_scaling': True,          # Scale positions based on correlations
+    'sector_concentration_limit': 0.60,        # 60% maximum sector concentration
+    
+    # Stress Testing
+    'enable_stress_tests': True,               # Enable periodic stress testing
+    'stress_test_frequency': 'weekly',         # Weekly stress testing
+    'var_confidence_level': 0.95,              # 95% confidence for VaR calculations
+    'expected_shortfall_alpha': 0.05,          # 5% alpha for expected shortfall
 }
 
 # =============================================================================
@@ -300,7 +377,16 @@ SYSTEM_CONFIG = {
     'name': "Three-Layer CTA Portfolio System",
     'version': "2.5",
     'description': "Multi-strategy futures trading with dynamic allocation, centralized risk management, dynamic strategy loading, and proper futures rollover handling",
-    'last_updated': "2025-01-20"
+    'last_updated': "2025-01-20",
+    'logging_level': 'INFO',                   # Logging verbosity
+    'performance_tracking': True,              # Enable detailed performance tracking
+    'rollover_cost_tracking': True,            # Track rollover costs for futures
+    'data_integrity_monitoring': True,         # Monitor data quality
+    'emergency_stop_enabled': True,            # Enable emergency stop functionality
+    'max_daily_trades': 50,                    # Maximum trades per day (safety limit)
+    'position_reconciliation': True,           # Enable position reconciliation
+    'slippage_modeling': True,                 # Model transaction slippage
+    'commission_modeling': True,               # Model transaction commissions
 }
 
 # =============================================================================

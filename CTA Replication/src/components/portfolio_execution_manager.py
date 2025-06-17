@@ -98,7 +98,7 @@ class PortfolioExecutionManager:
         
         # Check if we're starting with the right amount
         if abs(current_value - self.constraints_config['initial_capital']) > 1000:
-            self.algorithm.Log(f"  ⚠️  WARNING: Current value ${current_value:,} differs from config ${self.constraints_config['initial_capital']:,}")
+            self.algorithm.Log(f"  WARNING: Current value ${current_value:,} differs from config ${self.constraints_config['initial_capital']:,}")
         else:
             self.algorithm.Log(f"  ✓ Capital matches config expectation")
         
@@ -699,10 +699,10 @@ class PortfolioExecutionManager:
         # Log any config violations
         compliance = self.last_portfolio_snapshot['config_compliance']
         if not compliance['max_position_ok']:
-            self.algorithm.Log(f"⚠️  CONFIG VIOLATION: Max position {max_position:.1%} exceeds limit {max_single_position_limit:.1%}")
+            self.algorithm.Log(f"WARNING: CONFIG VIOLATION: Max position {max_position:.1%} exceeds limit {max_single_position_limit:.1%}")
         
         if not compliance['min_capital_ok']:
-            self.algorithm.Log(f"⚠️  CONFIG VIOLATION: Portfolio value ${float(current_portfolio_value):,} below minimum ${min_capital_limit:,}")
+            self.algorithm.Log(f"WARNING: CONFIG VIOLATION: Portfolio value ${float(current_portfolio_value):,} below minimum ${min_capital_limit:,}")
     
     def _create_empty_execution_summary(self, rebalance_type):
         """Create empty execution summary for no-trade scenarios."""

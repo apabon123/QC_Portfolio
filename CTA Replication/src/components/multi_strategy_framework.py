@@ -15,7 +15,8 @@ FIXED VERSION: Correct imports to match actual universe.py structure
 from AlgorithmImports import *
 import numpy as np
 # Import both classes from universe.py to match your actual structure
-from universe import AssetFilterManager, FuturesManager
+from universe import FuturesManager
+from asset_filter_manager import AssetFilterManager
 # Note: futuresroll.py is not being used in the new architecture
 
 

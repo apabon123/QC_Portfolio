@@ -116,11 +116,19 @@ class HMMCTAStrategy(BaseStrategy):
         except Exception as e:
             self.algorithm.Error(f"{self.name}: Error in retrain_models: {str(e)}")
     
-    def generate_signals(self):
-        """Generate HMM regime-based signals across all liquid symbols."""
+    def generate_signals(self, slice=None):
+        """
+        Generate HMM regime-based signals for all liquid symbols.
+        
+        Args:
+            slice: Optional data slice for futures chain analysis
+            
+        Returns:
+            dict: Symbol -> signal strength mapping
+        """
         try:
             signals = {}
-            liquid_symbols = self._get_liquid_symbols()
+            liquid_symbols = self._get_liquid_symbols(slice)
             
             if not liquid_symbols:
                 self.algorithm.Log(f"{self.name}: No liquid symbols for signal generation")
@@ -218,10 +226,10 @@ class HMMCTAStrategy(BaseStrategy):
             self.regime_persistence_violations += 1
             return False
     
-    def _get_liquid_symbols(self):
+    def _get_liquid_symbols(self, slice=None):
         """Get liquid symbols from futures manager."""
         if self.futures_manager and hasattr(self.futures_manager, 'get_liquid_symbols'):
-            return self.futures_manager.get_liquid_symbols()
+            return self.futures_manager.get_liquid_symbols(slice)
         return list(self.symbol_data.keys())
     
     def _create_symbol_data(self, symbol):

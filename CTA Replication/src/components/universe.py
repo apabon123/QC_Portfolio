@@ -2,112 +2,19 @@
 from AlgorithmImports import *
 import numpy as np
 
-class AssetFilterManager:
-    """
-    Asset filtering manager for multi-strategy systems.
-    Provides clean separation between strategy logic and asset universe management.
-    NOW FULLY CONFIG-DRIVEN.
-    """
-    
-    def __init__(self, algorithm, config_manager):
-        self.algorithm = algorithm
-        self.config_manager = config_manager
+# Defensive import for QuantConnect compatibility
+try:
+    from asset_filter_manager import AssetFilterManager
+except ImportError:
+    # Fallback: Define a minimal AssetFilterManager inline if import fails
+    class AssetFilterManager:
+        def __init__(self, algorithm, config_manager):
+            self.algorithm = algorithm
+            self.config_manager = config_manager
+            algorithm.Log("AssetFilterManager: Using fallback implementation")
         
-        # Load asset categories and filters from config
-        self.asset_categories = config_manager.config.get('asset_categories', {})
-        self.strategy_filters = config_manager.config.get('strategy_asset_filters', {})
-        
-        self.algorithm.Log(f"AssetFilterManager: Initialized with {len(self.asset_categories)} categories, {len(self.strategy_filters)} strategy filters")
-    
-    def get_symbols_for_strategy(self, strategy_name, all_symbols):
-        """
-        Filter symbols for a specific strategy using config-defined rules.
-        
-        Args:
-            strategy_name: Name of strategy (e.g., 'KestnerCTA')
-            all_symbols: List of all available symbols
-            
-        Returns:
-            List of symbols this strategy should trade
-        """
-        if strategy_name not in self.strategy_filters:
-            # If no filter defined, return all symbols (backwards compatible)
-            self.algorithm.Log(f"ASSET FILTER: {strategy_name} - no filtering applied")
+        def get_symbols_for_strategy(self, strategy_name, all_symbols):
             return all_symbols
-        
-        filter_config = self.strategy_filters[strategy_name]
-        allowed_symbols = set()
-        
-        # 1. Add symbols from allowed categories
-        for category in filter_config.get('allowed_categories', []):
-            if category in self.asset_categories:
-                allowed_symbols.update(self.asset_categories[category])
-        
-        # 2. Add specifically allowed symbols
-        allowed_symbols.update(filter_config.get('allowed_symbols', []))
-        
-        # 3. Remove symbols from excluded categories
-        for category in filter_config.get('excluded_categories', []):
-            if category.endswith('*'):
-                # Handle wildcard exclusions like 'futures_*'
-                prefix = category[:-1]
-                for cat_name, symbols in self.asset_categories.items():
-                    if cat_name.startswith(prefix):
-                        allowed_symbols -= set(symbols)
-            elif category in self.asset_categories:
-                allowed_symbols -= set(self.asset_categories[category])
-        
-        # 4. Remove specifically excluded symbols
-        allowed_symbols -= set(filter_config.get('excluded_symbols', []))
-        
-        # 5. Convert symbols to tickers for comparison (handle Symbol objects)
-        all_tickers = []
-        for sym in all_symbols:
-            if hasattr(sym, 'Value'):
-                # It's a Symbol object, extract the ticker
-                ticker = self._extract_ticker_from_symbol(sym)
-                all_tickers.append((ticker, sym))
-            else:
-                # It's already a string ticker
-                all_tickers.append((sym, sym))
-        
-        # 6. Only return symbols that exist in universe and are allowed
-        final_symbols = []
-        for ticker, original_symbol in all_tickers:
-            if ticker in allowed_symbols:
-                final_symbols.append(original_symbol)
-        
-        return final_symbols
-    
-    def _extract_ticker_from_symbol(self, symbol):
-        """Extract ticker from a QuantConnect Symbol object."""
-        try:
-            # For futures, the ID.Symbol gives us the base ticker
-            if hasattr(symbol, 'ID') and hasattr(symbol.ID, 'Symbol'):
-                return symbol.ID.Symbol
-            # Fallback to string representation
-            return str(symbol).split(' ')[0]
-        except:
-            return str(symbol)
-    
-    def get_filter_reason(self, strategy_name):
-        """Get the reasoning behind a strategy's asset filter."""
-        if strategy_name in self.strategy_filters:
-            return self.strategy_filters[strategy_name].get('reason', 'No reason specified')
-        return 'No filter applied'
-    
-    def log_filtering_results(self, strategy_name, all_symbols, filtered_symbols):
-        """Log filtering results for debugging."""
-        if len(filtered_symbols) < len(all_symbols):
-            all_tickers = [self._extract_ticker_from_symbol(s) for s in all_symbols]
-            filtered_tickers = [self._extract_ticker_from_symbol(s) for s in filtered_symbols]
-            removed_tickers = set(all_tickers) - set(filtered_tickers)
-            
-            self.algorithm.Log(f"ASSET FILTER: {strategy_name} excluded {removed_tickers}")
-            self.algorithm.Log(f"ASSET FILTER: {strategy_name} will trade {filtered_tickers}")
-            self.algorithm.Log(f"ASSET FILTER: Reason - {self.get_filter_reason(strategy_name)}")
-        else:
-            self.algorithm.Log(f"ASSET FILTER: {strategy_name} - no filtering applied")
 
 class FuturesManager:
     """
@@ -120,54 +27,140 @@ class FuturesManager:
     - Only adds custom logic where QC doesn't provide it
     """
     
-    def __init__(self, algorithm, config_manager):
-        self.algorithm = algorithm
-        self.config_manager = config_manager
-        
-        # Get universe configuration
-        self.universe_config = config_manager.get_universe_config()
-        
-        # Storage for securities - let QC manage the securities themselves
-        self.futures_symbols = []
-        
-        # Track priority groupings for our custom logic
-        self.priority_groups = {}
-        self._initialize_priority_groups()
-        
-        # Track rollover state - QC doesn't handle this automatically
-        self.rollover_state = {}
-        self.last_rollover_check = None
-        
-        self.algorithm.Log("FuturesManager: Initialized with QC-optimized approach")
+    def __init__(self, algorithm, config_manager, shared_symbols=None):
+        try:
+            self.algorithm = algorithm
+            self.algorithm.Log("FuturesManager: Starting initialization...")
+            
+            self.config_manager = config_manager
+            self.algorithm.Log("FuturesManager: Config manager set")
+            
+            self.shared_symbols = shared_symbols or {}  # Shared symbols from OptimizedSymbolManager
+            self.algorithm.Log(f"FuturesManager: Shared symbols set ({len(self.shared_symbols)} symbols)")
+            
+            # Get universe configuration
+            self.algorithm.Log("FuturesManager: Getting universe configuration...")
+            self.universe_config = config_manager.get_universe_config()
+            self.algorithm.Log("FuturesManager: Universe configuration retrieved")
+            
+            # Storage for securities - let QC manage the securities themselves
+            self.futures_symbols = []
+            self.algorithm.Log("FuturesManager: Futures symbols list initialized")
+            
+            # Track priority groupings for our custom logic
+            self.priority_groups = {}
+            self.algorithm.Log("FuturesManager: About to initialize priority groups...")
+            self._initialize_priority_groups()
+            self.algorithm.Log("FuturesManager: Priority groups initialized successfully")
+            
+            # Track rollover state - QC doesn't handle this automatically
+            self.rollover_state = {}
+            self.last_rollover_check = None
+            self.algorithm.Log("FuturesManager: Rollover state initialized")
+            
+            self.algorithm.Log("FuturesManager: Initialized with QC-optimized approach")
+            
+        except Exception as e:
+            algorithm.Error(f"CRITICAL ERROR in FuturesManager.__init__: {str(e)}")
+            import traceback
+            algorithm.Error(f"Full traceback: {traceback.format_exc()}")
+            raise
     
     def _initialize_priority_groups(self):
         """Initialize priority groups from configuration"""
         try:
-            for priority, symbols in self.universe_config.items():
-                if str(priority).isdigit():
-                    self.priority_groups[int(priority)] = symbols
-                    self.algorithm.Log(f"FuturesManager: Priority {priority} - {len(symbols)} symbols")
+            self.algorithm.Log("_initialize_priority_groups: Starting...")
+            self.priority_groups = {}
+            
+            # Parse futures section
+            self.algorithm.Log("_initialize_priority_groups: Getting futures config...")
+            futures_config = self.universe_config.get('futures', {})
+            self.algorithm.Log(f"_initialize_priority_groups: Futures config type: {type(futures_config)}, keys: {list(futures_config.keys()) if isinstance(futures_config, dict) else 'Not a dict'}")
+            
+            for category_name, category_symbols in futures_config.items():
+                self.algorithm.Log(f"_initialize_priority_groups: Processing category {category_name}, type: {type(category_symbols)}")
+                if isinstance(category_symbols, dict):
+                    for ticker, symbol_config in category_symbols.items():
+                        self.algorithm.Log(f"_initialize_priority_groups: Processing ticker {ticker}, config type: {type(symbol_config)}")
+                        if isinstance(symbol_config, dict):
+                            priority = symbol_config.get('priority', 1)
+                            if priority not in self.priority_groups:
+                                self.priority_groups[priority] = []
+                            
+                            # Create symbol config with ticker
+                            symbol_entry = {
+                                'ticker': ticker,
+                                'name': symbol_config.get('name', ticker),
+                                'category': symbol_config.get('category', 'unknown'),
+                                'priority': priority,
+                                'min_volume': symbol_config.get('min_volume', 0)
+                            }
+                            self.priority_groups[priority].append(symbol_entry)
+                            self.algorithm.Log(f"_initialize_priority_groups: Added {ticker} to priority {priority}")
+            
+            # Parse expansion candidates section
+            self.algorithm.Log("_initialize_priority_groups: Getting expansion candidates config...")
+            expansion_config = self.universe_config.get('expansion_candidates', {})
+            self.algorithm.Log(f"_initialize_priority_groups: Expansion config type: {type(expansion_config)}, keys: {list(expansion_config.keys()) if isinstance(expansion_config, dict) else 'Not a dict'}")
+            
+            for ticker, symbol_config in expansion_config.items():
+                self.algorithm.Log(f"_initialize_priority_groups: Processing expansion ticker {ticker}, config type: {type(symbol_config)}")
+                if isinstance(symbol_config, dict):
+                    priority = symbol_config.get('priority', 2)
+                    if priority not in self.priority_groups:
+                        self.priority_groups[priority] = []
+                    
+                    # Create symbol config with ticker
+                    symbol_entry = {
+                        'ticker': ticker,
+                        'name': symbol_config.get('name', ticker),
+                        'category': symbol_config.get('category', 'unknown'),
+                        'priority': priority,
+                        'min_volume': symbol_config.get('min_volume', 0)
+                    }
+                    self.priority_groups[priority].append(symbol_entry)
+                    self.algorithm.Log(f"_initialize_priority_groups: Added expansion {ticker} to priority {priority}")
+            
+            # Log results
+            self.algorithm.Log("_initialize_priority_groups: Logging final results...")
+            for priority in sorted(self.priority_groups.keys()):
+                symbols = self.priority_groups[priority]
+                tickers = [s['ticker'] for s in symbols]
+                self.algorithm.Log(f"FuturesManager: Priority {priority} - {len(symbols)} symbols: {tickers}")
+            
+            self.algorithm.Log("_initialize_priority_groups: Completed successfully")
+                
         except Exception as e:
             self.algorithm.Error(f"FuturesManager: Error initializing priority groups: {str(e)}")
+            import traceback
+            self.algorithm.Error(f"Full traceback: {traceback.format_exc()}")
+            raise
     
     def initialize_universe(self):
         """
-        Initialize the futures universe - main entry point called by algorithm
-        This method orchestrates the complete universe setup process
+        Initialize the futures universe using shared symbols from OptimizedSymbolManager.
+        This method now leverages shared symbol subscriptions instead of creating new ones.
         """
         try:
-            self.algorithm.Log("FuturesManager: Starting universe initialization...")
+            self.algorithm.Log("FuturesManager: Starting universe initialization with shared symbols...")
             
-            # Add all futures contracts to the universe
-            self.add_futures_universe()
+            if self.shared_symbols:
+                # Use shared symbols from OptimizedSymbolManager
+                self.futures_symbols = list(self.shared_symbols.values())
+                self.algorithm.Log(f"FuturesManager: Using {len(self.futures_symbols)} shared symbols from OptimizedSymbolManager")
+                
+                # Initialize rollover state for shared symbols
+                for ticker, symbol in self.shared_symbols.items():
+                    self._initialize_rollover_state(symbol, {'ticker': ticker, 'priority': 1})
+                
+            else:
+                # Fallback: Add futures contracts manually (should not happen with optimized approach)
+                self.algorithm.Log("FuturesManager: WARNING - No shared symbols provided, falling back to manual universe creation")
+                self.add_futures_universe()
             
             # Log initialization results
             info = self.get_futures_info()
-            self.algorithm.Log(f"FuturesManager: Universe initialized - {info['total_symbols']} total symbols, {info['liquid_symbols']} liquid")
-            
-            # Log priority breakdown
-            for priority, count in info['priority_breakdown'].items():
-                self.algorithm.Log(f"FuturesManager: Priority {priority}: {count} symbols")
+            self.algorithm.Log(f"FuturesManager: Universe initialized - {info['total_symbols']} total symbols")
             
             self.algorithm.Log("FuturesManager: Universe initialization complete")
             
@@ -245,7 +238,8 @@ class FuturesManager:
                             data_mapping_mode = getattr(DataMappingMode, futures_params.get('data_mapping_mode', 'OpenInterest'))
                             data_normalization_mode = getattr(DataNormalizationMode, futures_params.get('data_normalization_mode', 'BackwardsRatio'))
                             
-                            # Use QC's native AddFuture method with configurable parameters
+                            # SIMPLIFIED APPROACH: Use AddFuture for continuous contracts
+                            # This creates a futures universe but we'll use the continuous contract for trading
                             future = self.algorithm.AddFuture(
                                 ticker=ticker,
                                 resolution=resolution,
@@ -257,15 +251,26 @@ class FuturesManager:
                                 contractDepthOffset=futures_params.get('contract_depth_offset', 0)
                             )
                             
-                            # Set contract filter using configurable parameters
+                            # Set contract filter - this determines which contracts are available in the chain
                             min_days = filter_params.get('min_days_out', 0)
                             max_days = filter_params.get('max_days_out', 182)
                             future.SetFilter(timedelta(days=min_days), timedelta(days=max_days))
                             
-                            # Track the symbol
+                            self.algorithm.Log(f"FUTURES SETUP: {ticker} - Created futures universe with continuous contract")
+                            
+                            # Track the symbol and log detailed information
                             self.futures_symbols.append(future.Symbol)
                             self._initialize_rollover_state(future.Symbol, symbol_config)
                             added_count += 1
+                            
+                            # DEBUG: Log detailed symbol information
+                            self.algorithm.Log(f"FUTURES DEBUG: Added {ticker}")
+                            self.algorithm.Log(f"  - Symbol: {future.Symbol}")
+                            self.algorithm.Log(f"  - Symbol Type: {future.Symbol.SecurityType}")
+                            self.algorithm.Log(f"  - Symbol Value: {future.Symbol.Value}")
+                            self.algorithm.Log(f"  - Resolution: {resolution}")
+                            self.algorithm.Log(f"  - DataMappingMode: {data_mapping_mode}")
+                            self.algorithm.Log(f"  - DataNormalizationMode: {data_normalization_mode}")
                             
                     except Exception as e:
                         error_msg = f"CRITICAL ERROR adding futures contract {ticker}: {str(e)}"
@@ -417,23 +422,124 @@ class FuturesManager:
             
         return False
     
-    def get_liquid_symbols(self):
+    def get_liquid_symbols(self, slice=None):
         """
-        Return tradable symbols using QC's built-in validation
-        Leverage Securities properties instead of custom checks
+        Get currently liquid symbols with ENHANCED warm-up awareness and futures chain analysis.
+        
+        CRITICAL: Now takes slice parameter to properly access FuturesChains data.
+        
+        During warm-up: Uses chain analysis or fallback to major liquid contracts
+        Post warm-up: Full liquidity validation with IsTradable + HasData + chain data
+        
+        Args:
+            slice: Current data slice with FuturesChains data
+        
+        Returns:
+            list: List of liquid symbols
         """
         liquid_symbols = []
         
         try:
-            self.algorithm.Log(f"FuturesManager: Checking {len(self.futures_symbols)} symbols for liquidity")
+            is_warming_up = getattr(self.algorithm, 'IsWarmingUp', False)
+            chain_config = self.config_manager.get_futures_chain_config()
             
-            for symbol in self.futures_symbols:
-                symbol_str = str(symbol)
+            self.algorithm.Log(f"FuturesManager: Checking {len(self.futures_symbols)} symbols for liquidity (WarmingUp: {is_warming_up})")
+            
+            if is_warming_up:
+                # WARM-UP LIQUIDITY CHECKING (BASED ON QC PRIMER)
+                liquid_symbols = self._get_liquid_symbols_during_warmup(slice, chain_config)
+            else:
+                # POST WARM-UP LIQUIDITY CHECKING
+                liquid_symbols = self._get_liquid_symbols_post_warmup(slice, chain_config)
+        
+        except Exception as e:
+            self.algorithm.Error(f"FuturesManager: Error getting liquid symbols: {str(e)}")
+        
+        self.algorithm.Log(f"FuturesManager: Found {len(liquid_symbols)} liquid symbols out of {len(self.futures_symbols)} total")
+        return liquid_symbols
+
+    def _get_liquid_symbols_during_warmup(self, slice, chain_config):
+        """
+        Get liquid symbols during warm-up using futures chain analysis or fallback.
+        
+        CRITICAL: Uses slice parameter directly for FuturesChains access.
+        
+        Based on QC primer: Chain data IS available during warm-up, but IsTradable may be False.
+        
+        Args:
+            slice: Current data slice with FuturesChains data
+            chain_config: Futures chain configuration
+            
+        Returns:
+            list: Liquid symbols during warm-up
+        """
+        liquid_symbols = []
+        warmup_config = chain_config.get('liquidity_during_warmup', {})
+        
+        if not warmup_config.get('enabled', True):
+            self.algorithm.Log("FuturesManager: Warm-up liquidity checking disabled")
+            return []
+        
+        for symbol in self.futures_symbols:
+            symbol_str = str(symbol)
+            
+            try:
+                # CRITICAL: Try futures chain analysis first using slice parameter
+                if slice and hasattr(slice, 'FuturesChains') and symbol in slice.FuturesChains:
+                    chain = slice.FuturesChains[symbol]
+                    if self._analyze_chain_liquidity(chain, warmup_config):
+                        liquid_symbols.append(symbol)
+                        ticker = self._get_ticker_from_symbol(symbol)
+                        self.algorithm.Log(f"FuturesManager: {symbol_str} LIQUID via chain analysis (ticker: {ticker})")
+                        continue
                 
-                # Use QC's built-in validation methods
+                # Fallback to major liquid contracts list
+                if warmup_config.get('fallback_to_major_list', True):
+                    if self.config_manager.should_assume_liquid_during_warmup(symbol_str):
+                        liquid_symbols.append(symbol)
+                        ticker = self._get_ticker_from_symbol(symbol)
+                        self.algorithm.Log(f"FuturesManager: {symbol_str} assumed LIQUID during warmup (major contract: {ticker})")
+                    else:
+                        ticker = self._get_ticker_from_symbol(symbol)
+                        self.algorithm.Log(f"FuturesManager: {symbol_str} NOT in major liquid list during warmup (ticker: {ticker})")
+                
+            except Exception as e:
+                self.algorithm.Error(f"FuturesManager: Error checking warmup liquidity for {symbol_str}: {str(e)}")
+        
+        return liquid_symbols
+
+    def _get_liquid_symbols_post_warmup(self, slice, chain_config):
+        """
+        Get liquid symbols after warm-up using full validation.
+        
+        CRITICAL: Uses slice parameter directly for FuturesChains access.
+        
+        Args:
+            slice: Current data slice with FuturesChains data
+            chain_config: Futures chain configuration
+            
+        Returns:
+            list: Liquid symbols after warm-up
+        """
+        liquid_symbols = []
+        post_warmup_config = chain_config.get('post_warmup_liquidity', {})
+        
+        for symbol in self.futures_symbols:
+            symbol_str = str(symbol)
+            
+            try:
+                # Full validation after warm-up
                 if self._is_symbol_tradable_qc_native(symbol):
-                    liquid_symbols.append(symbol)
-                    self.algorithm.Log(f"FuturesManager: {symbol_str} is LIQUID")
+                    # Additional chain-based validation if enabled
+                    if post_warmup_config.get('use_mapped_contract', True):
+                        if self._validate_mapped_contract_liquidity(symbol, slice, post_warmup_config):
+                            liquid_symbols.append(symbol)
+                            self.algorithm.Log(f"FuturesManager: {symbol_str} is LIQUID (full validation passed)")
+                        else:
+                            self.algorithm.Log(f"FuturesManager: {symbol_str} failed mapped contract validation")
+                    else:
+                        liquid_symbols.append(symbol)
+                        self.algorithm.Log(f"FuturesManager: {symbol_str} is LIQUID (basic validation)")
                 else:
                     # Log why it's not liquid for debugging
                     if symbol in self.algorithm.Securities:
@@ -444,16 +550,76 @@ class FuturesManager:
                         self.algorithm.Log(f"FuturesManager: {symbol_str} NOT liquid - HasData:{has_data}, IsTradable:{is_tradable}, Price:{price}")
                     else:
                         self.algorithm.Log(f"FuturesManager: {symbol_str} NOT in Securities")
+                        
+            except Exception as e:
+                self.algorithm.Error(f"FuturesManager: Error checking post-warmup liquidity for {symbol_str}: {str(e)}")
         
-        except Exception as e:
-            self.algorithm.Error(f"FuturesManager: Error getting liquid symbols: {str(e)}")
-        
-        self.algorithm.Log(f"FuturesManager: Found {len(liquid_symbols)} liquid symbols out of {len(self.futures_symbols)} total")
         return liquid_symbols
-    
+
+    def _analyze_chain_liquidity(self, chain, warmup_config):
+        """
+        Analyze a futures chain for liquidity indicators.
+        
+        CRITICAL: Uses chain parameter directly (from slice.FuturesChains).
+        
+        Args:
+            chain: FuturesChain object from slice.FuturesChains[symbol]
+            warmup_config: Warm-up configuration
+            
+        Returns:
+            bool: True if chain shows liquidity
+        """
+        try:
+            if not chain or not hasattr(chain, 'Contracts'):
+                return False
+            
+            # Analyze the chain for liquidity indicators
+            liquid_contracts = 0
+            total_volume = 0
+            total_open_interest = 0
+            
+            for contract_symbol, contract in chain.Contracts.items():
+                try:
+                    # Check if contract has valid data
+                    if not hasattr(contract, 'LastPrice') or contract.LastPrice <= 0:
+                        continue
+                    
+                    # Get volume and open interest (if available)
+                    volume = getattr(contract, 'Volume', 0)
+                    open_interest = getattr(contract, 'OpenInterest', 0)
+                    
+                    total_volume += volume
+                    total_open_interest += open_interest
+                    
+                    # Count as liquid if it has reasonable volume or open interest
+                    min_volume = warmup_config.get('min_volume', 100)  # Lower threshold during warmup
+                    min_oi = warmup_config.get('min_open_interest', 10000)  # Lower threshold during warmup
+                    
+                    if volume >= min_volume or open_interest >= min_oi:
+                        liquid_contracts += 1
+                
+                except Exception as contract_e:
+                    self.algorithm.Debug(f"Error analyzing contract {contract_symbol}: {str(contract_e)}")
+                    continue
+            
+            # Consider liquid if we have at least one liquid contract
+            is_liquid = liquid_contracts > 0
+            
+            if warmup_config.get('log_chain_analysis', True) and is_liquid:
+                self.algorithm.Log(f"FuturesManager: Chain analysis - "
+                                 f"LiquidContracts:{liquid_contracts}, TotalVol:{total_volume}, TotalOI:{total_open_interest}")
+            
+            return is_liquid
+            
+        except Exception as e:
+            if warmup_config.get('log_chain_analysis', True):
+                self.algorithm.Debug(f"Chain analysis failed: {str(e)}")
+            return False
+
     def _is_symbol_tradable_qc_native(self, symbol):
         """
-        Check if symbol is tradable using QC's native validation with detailed debugging
+        Check if symbol is tradable using QC's native validation with warmup awareness
+        During warmup, continuous contracts may not have data yet - this is normal
         """
         try:
             if symbol not in self.algorithm.Securities:
@@ -462,10 +628,13 @@ class FuturesManager:
             
             security = self.algorithm.Securities[symbol]
             
-            # Detailed debugging for IsTradable issue
+            # Get basic properties
             has_data = security.HasData
             is_tradable = security.IsTradable
             price = security.Price
+            
+            # Check if we're still warming up
+            is_warming_up = self.algorithm.IsWarmingUp
             
             # Additional debugging information
             market_hours_info = ""
@@ -482,11 +651,26 @@ class FuturesManager:
             symbol_str = str(symbol)
             contract_type = "Continuous" if symbol_str.startswith('/') else "Underlying"
             
+            # WARMUP-AWARE LOGIC: During warmup, continuous contracts are expected to be valid
+            # even if HasData=False temporarily
+            if is_warming_up and contract_type == "Continuous":
+                # During warmup, assume major liquid contracts are valid if they're in Securities
+                ticker = self._get_ticker_from_symbol(symbol)
+                major_liquid_contracts = ['ES', 'NQ', 'YM', 'GC', 'CL', 'ZN', 'ZB', '6E', '6J']
+                
+                if ticker in major_liquid_contracts:
+                    self.algorithm.Log(f"FuturesManager: {symbol} ASSUMED liquid during warmup - {contract_type}, Ticker:{ticker}")
+                    return True
+                else:
+                    self.algorithm.Log(f"FuturesManager: {symbol} NOT in major liquid contracts during warmup - {contract_type}, Ticker:{ticker}")
+                    return False
+            
+            # POST-WARMUP LOGIC: Full validation required
             if is_tradable and has_data and price > 0:
                 self.algorithm.Log(f"FuturesManager: {symbol} IS liquid - {contract_type}, HasData:{has_data}, IsTradable:{is_tradable}, Price:{price}{market_hours_info}")
                 return True
             else:
-                self.algorithm.Log(f"FuturesManager: {symbol} NOT liquid - {contract_type}, HasData:{has_data}, IsTradable:{is_tradable}, Price:{price}{market_hours_info}")
+                self.algorithm.Log(f"FuturesManager: {symbol} NOT liquid - {contract_type}, HasData:{has_data}, IsTradable:{is_tradable}, Price:{price}{market_hours_info}, WarmingUp:{is_warming_up}")
                 
                 # Additional debugging for why it's not tradable
                 if not is_tradable:
@@ -741,3 +925,419 @@ class FuturesManager:
                 continue
         
         return info
+
+    def _validate_mapped_contract_liquidity(self, symbol, slice, post_warmup_config):
+        """
+        Validate liquidity of the currently mapped contract for a continuous future.
+        
+        CRITICAL: Uses slice parameter directly for FuturesChains access.
+        
+        Args:
+            symbol: Continuous futures symbol
+            slice: Current data slice with FuturesChains data
+            post_warmup_config: Post warm-up liquidity configuration
+            
+        Returns:
+            bool: True if mapped contract is liquid
+        """
+        try:
+            # Get the currently mapped contract from QC
+            if symbol not in self.algorithm.Securities:
+                return False
+            
+            security = self.algorithm.Securities[symbol]
+            
+            # Try to get the mapped contract (QC's continuous -> specific contract mapping)
+            if hasattr(security, 'Mapped'):
+                mapped_contract = security.Mapped
+                
+                if mapped_contract and mapped_contract in self.algorithm.Securities:
+                    mapped_security = self.algorithm.Securities[mapped_contract]
+                    
+                    # Validate mapped contract liquidity
+                    has_data = getattr(mapped_security, 'HasData', False)
+                    is_tradable = getattr(mapped_security, 'IsTradable', False)
+                    price = getattr(mapped_security, 'Price', 0)
+                    
+                    if has_data and is_tradable and price > 0:
+                        # Additional chain-based validation if available
+                        return self._validate_contract_chain_liquidity(mapped_contract, slice, post_warmup_config)
+                    else:
+                        symbol_str = str(symbol)
+                        mapped_str = str(mapped_contract)
+                        self.algorithm.Log(f"FuturesManager: {symbol_str} mapped contract {mapped_str} not liquid - "
+                                         f"HasData:{has_data}, IsTradable:{is_tradable}, Price:{price}")
+                        return False
+            
+            # Fallback to basic security validation if no mapped contract available
+            has_data = getattr(security, 'HasData', False)
+            is_tradable = getattr(security, 'IsTradable', False)
+            price = getattr(security, 'Price', 0)
+            
+            return has_data and is_tradable and price > 0
+            
+        except Exception as e:
+            self.algorithm.Error(f"Error validating mapped contract liquidity for {symbol}: {str(e)}")
+            return False
+
+    def _validate_contract_chain_liquidity(self, contract_symbol, slice, post_warmup_config):
+        """
+        Validate liquidity using chain data for a specific contract.
+        
+        CRITICAL: Uses slice parameter directly for FuturesChains access.
+        
+        Args:
+            contract_symbol: Specific futures contract symbol
+            slice: Current data slice with FuturesChains data
+            post_warmup_config: Post warm-up configuration
+            
+        Returns:
+            bool: True if contract meets liquidity requirements
+        """
+        try:
+            if not slice or not hasattr(slice, 'FuturesChains'):
+                return True  # Default to True if no chain data available
+            
+            # Find the chain that contains this contract
+            for chain_symbol, chain in slice.FuturesChains.items():
+                if hasattr(chain, 'Contracts') and contract_symbol in chain.Contracts:
+                    contract = chain.Contracts[contract_symbol]
+                    
+                    # Check volume requirements
+                    min_volume = post_warmup_config.get('min_volume', 1000)
+                    volume = getattr(contract, 'Volume', 0)
+                    
+                    if volume < min_volume:
+                        return False
+                    
+                    # Check open interest requirements
+                    min_oi = post_warmup_config.get('min_open_interest', 50000)
+                    open_interest = getattr(contract, 'OpenInterest', 0)
+                    
+                    if open_interest < min_oi:
+                        return False
+                    
+                    # Check bid-ask spread if available
+                    max_spread = post_warmup_config.get('max_bid_ask_spread', 0.001)
+                    bid_price = getattr(contract, 'BidPrice', 0)
+                    ask_price = getattr(contract, 'AskPrice', 0)
+                    
+                    if bid_price > 0 and ask_price > 0:
+                        spread_ratio = (ask_price - bid_price) / bid_price
+                        if spread_ratio > max_spread:
+                            return False
+                    
+                    return True
+            
+            # Contract not found in any chain, default to True
+            return True
+            
+        except Exception as e:
+            self.algorithm.Debug(f"Error validating contract chain liquidity: {str(e)}")
+            return True  # Default to True on error
+
+    def update_during_warmup(self, slice):
+        """
+        Update universe manager during warm-up period.
+        
+        CRITICAL: Uses slice parameter directly for FuturesChains access.
+        
+        During warm-up, we can analyze futures chains and build liquidity profiles.
+        
+        Args:
+            slice: Current data slice with FuturesChains data
+        """
+        try:
+            # Analyze futures chains during warm-up (if available)
+            if hasattr(slice, 'FuturesChains') and slice.FuturesChains:
+                self._analyze_chains_during_warmup(slice.FuturesChains)
+            
+            # Track rollover events during warm-up
+            if hasattr(slice, 'SymbolChangedEvents') and slice.SymbolChangedEvents:
+                self._track_rollover_events_during_warmup(slice.SymbolChangedEvents)
+                
+        except Exception as e:
+            self.algorithm.Error(f"Error updating universe during warmup: {str(e)}")
+
+    def update_with_slice(self, slice):
+        """
+        Update universe manager with current slice for normal trading.
+        
+        CRITICAL: Uses slice parameter directly for FuturesChains access.
+        
+        Args:
+            slice: Current data slice with FuturesChains data
+        """
+        try:
+            if self.algorithm.IsWarmingUp:
+                self.update_during_warmup(slice)
+            else:
+                self._analyze_chains_during_trading(slice.FuturesChains if hasattr(slice, 'FuturesChains') else {})
+                self._track_rollover_events_during_trading(slice.SymbolChangedEvents if hasattr(slice, 'SymbolChangedEvents') else [])
+                
+        except Exception as e:
+            self.algorithm.Error(f"FuturesManager: Error in update_with_slice: {str(e)}")
+
+    def update_with_unified_data(self, unified_data, slice):
+        """
+        PHASE 3: Update with unified data interface.
+        Leverages standardized chain analysis and symbol data.
+        """
+        try:
+            # Validate unified data structure
+            if not unified_data or not unified_data.get('valid', False):
+                self.algorithm.Log("FuturesManager: Invalid unified data received")
+                return
+            
+            # Extract symbols and chain data from unified data
+            symbols_data = unified_data.get('symbols', {})
+            if not symbols_data:
+                return
+            
+            # Process unified chain data if available
+            chains_data = {}
+            liquid_symbols = []
+            
+            for symbol, symbol_data in symbols_data.items():
+                if not symbol_data.get('valid', False):
+                    continue
+                
+                # Check if symbol has chain data
+                if 'chain' in symbol_data.get('data', {}):
+                    chain_info = symbol_data['data']['chain']
+                    if chain_info.get('valid', False):
+                        chains_data[symbol] = chain_info
+                
+                # Check if symbol is liquid based on unified data
+                security_data = symbol_data.get('data', {}).get('security', {})
+                if (security_data.get('is_tradable', False) and 
+                    security_data.get('has_data', False) and
+                    security_data.get('market_hours_open', False)):
+                    liquid_symbols.append(symbol)
+            
+            # Update analysis based on algorithm state
+            if self.algorithm.IsWarmingUp:
+                self._analyze_unified_chains_during_warmup(chains_data, liquid_symbols)
+            else:
+                self._analyze_unified_chains_during_trading(chains_data, liquid_symbols)
+                
+            # Track rollover events from slice if available
+            if hasattr(slice, 'SymbolChangedEvents') and slice.SymbolChangedEvents:
+                self._track_rollover_events_during_trading(slice.SymbolChangedEvents)
+            
+            # Log unified data processing
+            metadata = unified_data.get('metadata', {})
+            self.algorithm.Debug(f"FuturesManager: Processed {len(liquid_symbols)} liquid symbols, "
+                               f"{len(chains_data)} chains from unified data")
+                
+        except Exception as e:
+            self.algorithm.Error(f"FuturesManager: Error in update_with_unified_data: {str(e)}")
+            # Fallback to traditional method
+            self.update_with_slice(slice)
+
+    def _analyze_unified_chains_during_warmup(self, chains_data, liquid_symbols):
+        """Analyze unified chain data during warm-up period."""
+        try:
+            # Get warm-up configuration
+            warmup_config = self.universe_config.get('liquidity_during_warmup', {
+                'min_volume_warmup': 100,
+                'min_open_interest_warmup': 10000,
+                'major_liquid_contracts': ['ES', 'NQ', 'YM', 'ZN', 'ZB', '6E', '6J', 'CL', 'GC']
+            })
+            
+            for symbol, chain_info in chains_data.items():
+                # Analyze liquidity using unified chain data
+                total_volume = chain_info.get('total_volume', 0)
+                total_open_interest = chain_info.get('total_open_interest', 0)
+                most_liquid = chain_info.get('most_liquid_contract')
+                
+                # Update rollover state based on chain analysis
+                if most_liquid:
+                    self._update_rollover_tracking_from_unified_data(symbol, most_liquid, chain_info)
+                
+                # Log detailed analysis if symbol is in liquid list
+                if symbol in liquid_symbols:
+                    self.algorithm.Debug(f"FuturesManager: {symbol} - Vol: {total_volume}, "
+                                       f"OI: {total_open_interest}, Contracts: {chain_info.get('total_contracts', 0)}")
+                    
+        except Exception as e:
+            self.algorithm.Error(f"FuturesManager: Error in unified chain analysis during warmup: {str(e)}")
+
+    def _analyze_unified_chains_during_trading(self, chains_data, liquid_symbols):
+        """Analyze unified chain data during normal trading."""
+        try:
+            # Get post-warmup configuration
+            trading_config = self.universe_config.get('post_warmup_liquidity', {
+                'min_volume': 1000,
+                'min_open_interest': 50000,
+                'max_bid_ask_spread': 0.001
+            })
+            
+            for symbol, chain_info in chains_data.items():
+                # More stringent liquidity analysis for trading
+                if symbol in liquid_symbols:
+                    # Validate chain meets trading requirements
+                    if (chain_info.get('total_volume', 0) >= trading_config['min_volume'] and
+                        chain_info.get('total_open_interest', 0) >= trading_config['min_open_interest']):
+                        
+                        # Update rollover tracking
+                        most_liquid = chain_info.get('most_liquid_contract')
+                        if most_liquid:
+                            self._update_rollover_tracking_from_unified_data(symbol, most_liquid, chain_info)
+                            
+        except Exception as e:
+            self.algorithm.Error(f"FuturesManager: Error in unified chain analysis during trading: {str(e)}")
+
+    def _update_rollover_tracking_from_unified_data(self, symbol, most_liquid_contract, chain_info):
+        """Update rollover tracking using unified chain data."""
+        try:
+            if not most_liquid_contract:
+                return
+                
+            # Extract contract information from unified data
+            contract_symbol = most_liquid_contract.get('symbol')
+            expiry = most_liquid_contract.get('expiry')
+            volume = most_liquid_contract.get('volume', 0)
+            open_interest = most_liquid_contract.get('open_interest', 0)
+            
+            # Update rollover state
+            ticker = self._get_ticker_from_symbol(symbol)
+            if ticker not in self.rollover_state:
+                self.rollover_state[ticker] = {}
+                
+            self.rollover_state[ticker].update({
+                'current_contract': contract_symbol,
+                'expiry': expiry,
+                'volume': volume,
+                'open_interest': open_interest,
+                'last_update': self.algorithm.Time,
+                'chain_liquidity': chain_info.get('total_volume', 0)
+            })
+            
+        except Exception as e:
+            self.algorithm.Error(f"FuturesManager: Error updating rollover tracking: {str(e)}")
+
+    def _analyze_chains_during_warmup(self, futures_chains):
+        """
+        Analyze futures chains during warm-up to build liquidity profiles.
+        
+        Args:
+            futures_chains: FuturesChains object from slice
+        """
+        try:
+            for chain_symbol, chain in futures_chains.items():
+                if not hasattr(chain, 'Contracts'):
+                    continue
+                
+                contract_count = len(chain.Contracts)
+                total_volume = 0
+                total_oi = 0
+                
+                for contract_symbol, contract in chain.Contracts.items():
+                    try:
+                        volume = getattr(contract, 'Volume', 0)
+                        oi = getattr(contract, 'OpenInterest', 0)
+                        total_volume += volume
+                        total_oi += oi
+                    except:
+                        continue
+                
+                # Log chain analysis periodically (avoid spam)
+                if self.algorithm.Time.day == 1:  # First of month
+                    chain_str = str(chain_symbol)
+                    ticker = self._get_ticker_from_symbol(chain_symbol)
+                    self.algorithm.Log(f"WARMUP CHAIN ANALYSIS: {ticker} - "
+                                     f"Contracts:{contract_count}, Vol:{total_volume}, OI:{total_oi}")
+                    
+        except Exception as e:
+            self.algorithm.Debug(f"Error analyzing chains during warmup: {str(e)}")
+
+    def _analyze_chains_during_trading(self, futures_chains):
+        """
+        Analyze futures chains during normal trading.
+        
+        Args:
+            futures_chains: FuturesChains object from slice
+        """
+        try:
+            # Similar to warmup analysis but less frequent logging
+            for chain_symbol, chain in futures_chains.items():
+                if not hasattr(chain, 'Contracts'):
+                    continue
+                
+                # Only log on first day of month to avoid spam
+                if self.algorithm.Time.day == 1:
+                    contract_count = len(chain.Contracts)
+                    total_volume = 0
+                    total_oi = 0
+                    
+                    for contract_symbol, contract in chain.Contracts.items():
+                        try:
+                            volume = getattr(contract, 'Volume', 0)
+                            oi = getattr(contract, 'OpenInterest', 0)
+                            total_volume += volume
+                            total_oi += oi
+                        except:
+                            continue
+                    
+                    chain_str = str(chain_symbol)
+                    ticker = self._get_ticker_from_symbol(chain_symbol)
+                    self.algorithm.Log(f"TRADING CHAIN ANALYSIS: {ticker} - "
+                                     f"Contracts:{contract_count}, Vol:{total_volume}, OI:{total_oi}")
+                    
+        except Exception as e:
+            self.algorithm.Debug(f"Error analyzing chains during trading: {str(e)}")
+
+    def _track_rollover_events_during_warmup(self, symbol_changed_events):
+        """
+        Track rollover events during warm-up for learning purposes.
+        
+        Args:
+            symbol_changed_events: SymbolChangedEvents from slice
+        """
+        try:
+            for symbol_changed in symbol_changed_events.Values:
+                old_symbol = symbol_changed.OldSymbol
+                new_symbol = symbol_changed.NewSymbol
+                
+                self.algorithm.Log(f"WARMUP ROLLOVER EVENT: {old_symbol} -> {new_symbol}")
+                
+                # Track for post-warmup analysis
+                if not hasattr(self, '_warmup_rollover_events'):
+                    self._warmup_rollover_events = []
+                
+                self._warmup_rollover_events.append({
+                    'date': self.algorithm.Time,
+                    'old_symbol': old_symbol,
+                    'new_symbol': new_symbol
+                })
+                
+        except Exception as e:
+            self.algorithm.Debug(f"Error tracking rollover events during warmup: {str(e)}")
+
+    def _track_rollover_events_during_trading(self, symbol_changed_events):
+        """
+        Track rollover events during normal trading.
+        
+        Args:
+            symbol_changed_events: SymbolChangedEvents from slice
+        """
+        try:
+            for symbol_changed in symbol_changed_events.Values:
+                old_symbol = symbol_changed.OldSymbol
+                new_symbol = symbol_changed.NewSymbol
+                
+                self.algorithm.Log(f"TRADING ROLLOVER EVENT: {old_symbol} -> {new_symbol}")
+                
+                # Track for analysis
+                if not hasattr(self, '_trading_rollover_events'):
+                    self._trading_rollover_events = []
+                
+                self._trading_rollover_events.append({
+                    'date': self.algorithm.Time,
+                    'old_symbol': old_symbol,
+                    'new_symbol': new_symbol
+                })
+                
+        except Exception as e:
+            self.algorithm.Debug(f"Error tracking rollover events during trading: {str(e)}")
