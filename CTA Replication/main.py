@@ -252,33 +252,30 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
     def _schedule_rebalancing(self):
         """Schedule weekly and monthly rebalancing compatible with daily data resolution."""
         try:
-            # Weekly rebalancing at END OF WEEK (compatible with daily data)
-            # Use WeekEnd() which triggers at market close on the last trading day of the week
+            # Weekly rebalancing at END OF WEEK (pure daily scheduling - no time specification)
+            # QuantConnect will execute when daily data is available
             self.Schedule.On(
                 self.DateRules.WeekEnd(), 
-                self.TimeRules.BeforeMarketClose("ES", 30),  # 30 minutes before ES market close
                 self.WeeklyRebalance
             )
             
-            # Monthly performance reporting at month end
+            # Monthly performance reporting at month end (pure daily scheduling)
             self.Schedule.On(
                 self.DateRules.MonthEnd(),
-                self.TimeRules.BeforeMarketClose("ES", 30),  # 30 minutes before ES market close
                 self.MonthlyReporting
             )
             
-            # Daily continuous contract validation at market close (when daily data is available)
+            # Daily continuous contract validation (pure daily scheduling)
             self.Schedule.On(
                 self.DateRules.EveryDay(),
-                self.TimeRules.BeforeMarketClose("ES", 60),  # 1 hour before market close
                 self.ValidateContinuousContracts
             )
             
             self.Log("Rebalancing schedule configured for DAILY DATA RESOLUTION:")
-            self.Log("  - Weekly: End of week, 30 min before ES market close (compatible with daily data)")
-            self.Log("  - Monthly: Month end, 30 min before ES market close")
-            self.Log("  - Daily: Contract validation, 1 hour before ES market close")
-            self.Log("  - NO INTRADAY SCHEDULING: Prevents stale fills with daily data")
+            self.Log("  - Weekly: End of week (pure daily scheduling - no time specification)")
+            self.Log("  - Monthly: Month end (pure daily scheduling - no time specification)")
+            self.Log("  - Daily: Contract validation (pure daily scheduling - no time specification)")
+            self.Log("  - QuantConnect will execute when daily data is naturally available")
             
         except Exception as e:
             self.Error(f"Failed to schedule rebalancing: {str(e)}")
