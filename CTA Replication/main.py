@@ -250,41 +250,35 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             self.futures_symbols = []
     
     def _schedule_rebalancing(self):
-        """Schedule weekly and monthly rebalancing."""
+        """Schedule weekly and monthly rebalancing compatible with daily data resolution."""
         try:
-            # Weekly rebalancing on Fridays at 10 AM (market hours)
-            # Use WeekEnd() which triggers on the last trading day of the week (usually Friday)
+            # Weekly rebalancing at END OF WEEK (compatible with daily data)
+            # Use WeekEnd() which triggers at market close on the last trading day of the week
             self.Schedule.On(
                 self.DateRules.WeekEnd(), 
-                self.TimeRules.At(10, 0), 
+                self.TimeRules.BeforeMarketClose("ES", 30),  # 30 minutes before ES market close
                 self.WeeklyRebalance
             )
             
-            # Alternative: Also schedule on explicit Fridays as backup
-            self.Schedule.On(
-                self.DateRules.Every(DayOfWeek.Friday),
-                self.TimeRules.At(10, 0),
-                self.WeeklyRebalanceBackup
-            )
-            
-            # Monthly performance reporting
+            # Monthly performance reporting at month end
             self.Schedule.On(
                 self.DateRules.MonthEnd(),
-                self.TimeRules.At(17, 0),
+                self.TimeRules.BeforeMarketClose("ES", 30),  # 30 minutes before ES market close
                 self.MonthlyReporting
             )
             
-            # Daily continuous contract validation (fixes /ZN vs ZN mapping issues)
+            # Daily continuous contract validation at market close (when daily data is available)
             self.Schedule.On(
                 self.DateRules.EveryDay(),
-                self.TimeRules.At(9, 0),
+                self.TimeRules.BeforeMarketClose("ES", 60),  # 1 hour before market close
                 self.ValidateContinuousContracts
             )
             
-            self.Log("Rebalancing schedule configured:")
-            self.Log("  - Weekly: Fridays at 10:00 AM (WeekEnd + explicit Friday backup)")
-            self.Log("  - Monthly: Month end at 17:00")
-            self.Log("  - Daily: Contract validation at 09:00")
+            self.Log("Rebalancing schedule configured for DAILY DATA RESOLUTION:")
+            self.Log("  - Weekly: End of week, 30 min before ES market close (compatible with daily data)")
+            self.Log("  - Monthly: Month end, 30 min before ES market close")
+            self.Log("  - Daily: Contract validation, 1 hour before ES market close")
+            self.Log("  - NO INTRADAY SCHEDULING: Prevents stale fills with daily data")
             
         except Exception as e:
             self.Error(f"Failed to schedule rebalancing: {str(e)}")
@@ -553,14 +547,16 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 # IMMEDIATE TEST: Trigger first rebalancing to test the system
                 self.Log("="*50)
                 self.Log("WARMUP COMPLETE - TESTING IMMEDIATE REBALANCING")
+                self.Log("NOTE: Using daily data resolution - rebalancing scheduled for market close")
                 self.Log("="*50)
                 try:
-                    # Force immediate rebalancing test
+                    # Force immediate rebalancing test (will use current daily bar data)
                     self.Log("FORCING IMMEDIATE REBALANCING TEST...")
                     self.WeeklyRebalance()
                     
-                    # Also schedule next Friday rebalancing
-                    self.Log("SCHEDULING NEXT FRIDAY REBALANCING...")
+                    # Note about proper scheduling
+                    self.Log("SCHEDULING INFO: Future rebalancing will occur at market close (end of week)")
+                    self.Log("This prevents stale fills that occur with intraday scheduling on daily data")
                     
                 except Exception as test_e:
                     self.Error(f"IMMEDIATE REBALANCE TEST FAILED: {str(test_e)}")
@@ -950,22 +946,6 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             
         except Exception as e:
             self.Error(f"Error in weekly rebalance: {str(e)}")
-    
-    def WeeklyRebalanceBackup(self):
-        """Backup weekly rebalancing method to ensure it triggers."""
-        try:
-            self.Log(f"BACKUP REBALANCE TRIGGER: Friday at {self.Time}")
-            
-            # Only execute if primary rebalance hasn't run today
-            if not hasattr(self, '_last_rebalance_date') or self._last_rebalance_date != self.Time.date():
-                self.Log("BACKUP: Executing weekly rebalance (primary didn't trigger)")
-                self._last_rebalance_date = self.Time.date()
-                self.WeeklyRebalance()
-            else:
-                self.Log("BACKUP: Primary rebalance already executed today")
-                
-        except Exception as e:
-            self.Error(f"Error in backup weekly rebalance: {str(e)}")
     
     def MonthlyReporting(self):
         """Generate monthly performance reports."""
