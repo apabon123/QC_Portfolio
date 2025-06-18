@@ -35,11 +35,11 @@ class StrategyLoader:
     Adding new strategies requires ZERO code changes - just config updates!
     """
     
-    def __init__(self, algorithm, config_manager, shared_symbols=None):
+    def __init__(self, algorithm, config_manager):
         self.algorithm = algorithm
         self.config_manager = config_manager
         self.config = config_manager.get_config()
-        self.shared_symbols = shared_symbols or {}  # Shared symbols from OptimizedSymbolManager
+        # Symbols are now managed directly by QC's native methods
         
         # Strategy management
         self.strategy_objects = {}        # Loaded strategy instances
@@ -130,21 +130,18 @@ class StrategyLoader:
                 self.algorithm.Error(f"LAYER 1: {strategy_name} missing 'module' or 'class' in config")
                 return False
             
-            # Validate futures manager availability
-            if not hasattr(self.algorithm, 'futures_manager'):
-                raise ValueError("Algorithm missing futures_manager - required for strategy initialization")
+            # QC handles symbol management natively - no custom managers needed
             
             # Dynamic import and instantiation
             strategy_module = importlib.import_module(module_name)
             strategy_class = getattr(strategy_module, class_name)
             
-            # Create strategy instance with CONFIG-COMPLIANT approach and shared symbols
+            # Create strategy instance with CONFIG-COMPLIANT approach
             # BaseStrategy constructor expects: (algorithm, config_manager, strategy_name)
             strategy_instance = strategy_class(
                 algorithm=self.algorithm,
                 config_manager=self.config_manager,
-                strategy_name=strategy_name,
-                shared_symbols=self.shared_symbols  # Pass shared symbols to strategy
+                strategy_name=strategy_name
             )
             
             # Store strategy and metadata

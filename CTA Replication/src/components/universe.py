@@ -18,50 +18,40 @@ except ImportError:
 
 class FuturesManager:
     """
-    OPTIMIZED FUTURES MANAGER - LEVERAGING QC BUILT-INS
-    
-    Purpose: Maximize QuantConnect's native capabilities for futures management
-    - Uses QC's built-in Securities properties (HasData, IsTradable, Price)
-    - Leverages native SymbolProperties for lot sizes and multipliers  
-    - Uses QC's built-in market hours and exchange properties
-    - Only adds custom logic where QC doesn't provide it
+    MINIMAL TEST VERSION - ISOLATE ERROR
     """
     
     def __init__(self, algorithm, config_manager, shared_symbols=None):
+        # MINIMAL CONSTRUCTOR - TEST EACH STEP
         try:
+            # Step 1: Basic assignments
             self.algorithm = algorithm
-            self.algorithm.Log("FuturesManager: Starting initialization...")
+            algorithm.Log("FuturesManager: Step 1 - Algorithm assigned")
             
+            # Step 2: Config manager
             self.config_manager = config_manager
-            self.algorithm.Log("FuturesManager: Config manager set")
+            algorithm.Log("FuturesManager: Step 2 - Config manager assigned")
             
-            self.shared_symbols = shared_symbols or {}  # Shared symbols from OptimizedSymbolManager
-            self.algorithm.Log(f"FuturesManager: Shared symbols set ({len(self.shared_symbols)} symbols)")
+            # Step 3: Shared symbols
+            self.shared_symbols = shared_symbols or {}
+            algorithm.Log("FuturesManager: Step 3 - Shared symbols assigned")
             
-            # Get universe configuration
-            self.algorithm.Log("FuturesManager: Getting universe configuration...")
-            self.universe_config = config_manager.get_universe_config()
-            self.algorithm.Log("FuturesManager: Universe configuration retrieved")
-            
-            # Storage for securities - let QC manage the securities themselves
+            # Step 4: Basic initialization
             self.futures_symbols = []
-            self.algorithm.Log("FuturesManager: Futures symbols list initialized")
-            
-            # Track priority groupings for our custom logic
             self.priority_groups = {}
-            self.algorithm.Log("FuturesManager: About to initialize priority groups...")
-            self._initialize_priority_groups()
-            self.algorithm.Log("FuturesManager: Priority groups initialized successfully")
-            
-            # Track rollover state - QC doesn't handle this automatically
             self.rollover_state = {}
             self.last_rollover_check = None
-            self.algorithm.Log("FuturesManager: Rollover state initialized")
+            algorithm.Log("FuturesManager: Step 4 - Basic initialization complete")
             
-            self.algorithm.Log("FuturesManager: Initialized with QC-optimized approach")
+            # Step 5: Test config access
+            algorithm.Log("FuturesManager: Step 5 - Testing config access...")
+            self.universe_config = config_manager.get_universe_config()
+            algorithm.Log("FuturesManager: Step 5 - Config access successful")
+            
+            algorithm.Log("FuturesManager: MINIMAL CONSTRUCTOR COMPLETED SUCCESSFULLY")
             
         except Exception as e:
-            algorithm.Error(f"CRITICAL ERROR in FuturesManager.__init__: {str(e)}")
+            algorithm.Error(f"FuturesManager MINIMAL ERROR at step: {str(e)}")
             import traceback
             algorithm.Error(f"Full traceback: {traceback.format_exc()}")
             raise
@@ -69,19 +59,15 @@ class FuturesManager:
     def _initialize_priority_groups(self):
         """Initialize priority groups from configuration"""
         try:
-            self.algorithm.Log("_initialize_priority_groups: Starting...")
             self.priority_groups = {}
             
             # Parse futures section
-            self.algorithm.Log("_initialize_priority_groups: Getting futures config...")
             futures_config = self.universe_config.get('futures', {})
-            self.algorithm.Log(f"_initialize_priority_groups: Futures config type: {type(futures_config)}, keys: {list(futures_config.keys()) if isinstance(futures_config, dict) else 'Not a dict'}")
+
             
             for category_name, category_symbols in futures_config.items():
-                self.algorithm.Log(f"_initialize_priority_groups: Processing category {category_name}, type: {type(category_symbols)}")
                 if isinstance(category_symbols, dict):
                     for ticker, symbol_config in category_symbols.items():
-                        self.algorithm.Log(f"_initialize_priority_groups: Processing ticker {ticker}, config type: {type(symbol_config)}")
                         if isinstance(symbol_config, dict):
                             priority = symbol_config.get('priority', 1)
                             if priority not in self.priority_groups:
@@ -96,15 +82,12 @@ class FuturesManager:
                                 'min_volume': symbol_config.get('min_volume', 0)
                             }
                             self.priority_groups[priority].append(symbol_entry)
-                            self.algorithm.Log(f"_initialize_priority_groups: Added {ticker} to priority {priority}")
             
             # Parse expansion candidates section
-            self.algorithm.Log("_initialize_priority_groups: Getting expansion candidates config...")
             expansion_config = self.universe_config.get('expansion_candidates', {})
-            self.algorithm.Log(f"_initialize_priority_groups: Expansion config type: {type(expansion_config)}, keys: {list(expansion_config.keys()) if isinstance(expansion_config, dict) else 'Not a dict'}")
+            self.algorithm.Log(f"_initialize_priority_groups: Processing {len(expansion_config)} expansion candidates")
             
             for ticker, symbol_config in expansion_config.items():
-                self.algorithm.Log(f"_initialize_priority_groups: Processing expansion ticker {ticker}, config type: {type(symbol_config)}")
                 if isinstance(symbol_config, dict):
                     priority = symbol_config.get('priority', 2)
                     if priority not in self.priority_groups:
@@ -119,16 +102,14 @@ class FuturesManager:
                         'min_volume': symbol_config.get('min_volume', 0)
                     }
                     self.priority_groups[priority].append(symbol_entry)
-                    self.algorithm.Log(f"_initialize_priority_groups: Added expansion {ticker} to priority {priority}")
             
             # Log results
-            self.algorithm.Log("_initialize_priority_groups: Logging final results...")
             for priority in sorted(self.priority_groups.keys()):
                 symbols = self.priority_groups[priority]
                 tickers = [s['ticker'] for s in symbols]
                 self.algorithm.Log(f"FuturesManager: Priority {priority} - {len(symbols)} symbols: {tickers}")
             
-            self.algorithm.Log("_initialize_priority_groups: Completed successfully")
+
                 
         except Exception as e:
             self.algorithm.Error(f"FuturesManager: Error initializing priority groups: {str(e)}")
@@ -137,33 +118,11 @@ class FuturesManager:
             raise
     
     def initialize_universe(self):
-        """
-        Initialize the futures universe using shared symbols from OptimizedSymbolManager.
-        This method now leverages shared symbol subscriptions instead of creating new ones.
-        """
+        """Minimal placeholder for universe initialization."""
         try:
-            self.algorithm.Log("FuturesManager: Starting universe initialization with shared symbols...")
-            
-            if self.shared_symbols:
-                # Use shared symbols from OptimizedSymbolManager
-                self.futures_symbols = list(self.shared_symbols.values())
-                self.algorithm.Log(f"FuturesManager: Using {len(self.futures_symbols)} shared symbols from OptimizedSymbolManager")
-                
-                # Initialize rollover state for shared symbols
-                for ticker, symbol in self.shared_symbols.items():
-                    self._initialize_rollover_state(symbol, {'ticker': ticker, 'priority': 1})
-                
-            else:
-                # Fallback: Add futures contracts manually (should not happen with optimized approach)
-                self.algorithm.Log("FuturesManager: WARNING - No shared symbols provided, falling back to manual universe creation")
-                self.add_futures_universe()
-            
-            # Log initialization results
-            info = self.get_futures_info()
-            self.algorithm.Log(f"FuturesManager: Universe initialized - {info['total_symbols']} total symbols")
-            
-            self.algorithm.Log("FuturesManager: Universe initialization complete")
-            
+            self.algorithm.Log("FuturesManager: initialize_universe called")
+            # Do nothing for now - just testing constructor
+            self.algorithm.Log("FuturesManager: initialize_universe completed")
         except Exception as e:
             self.algorithm.Error(f"FuturesManager: Error in initialize_universe: {str(e)}")
             raise
@@ -423,40 +382,8 @@ class FuturesManager:
         return False
     
     def get_liquid_symbols(self, slice=None):
-        """
-        Get currently liquid symbols with ENHANCED warm-up awareness and futures chain analysis.
-        
-        CRITICAL: Now takes slice parameter to properly access FuturesChains data.
-        
-        During warm-up: Uses chain analysis or fallback to major liquid contracts
-        Post warm-up: Full liquidity validation with IsTradable + HasData + chain data
-        
-        Args:
-            slice: Current data slice with FuturesChains data
-        
-        Returns:
-            list: List of liquid symbols
-        """
-        liquid_symbols = []
-        
-        try:
-            is_warming_up = getattr(self.algorithm, 'IsWarmingUp', False)
-            chain_config = self.config_manager.get_futures_chain_config()
-            
-            self.algorithm.Log(f"FuturesManager: Checking {len(self.futures_symbols)} symbols for liquidity (WarmingUp: {is_warming_up})")
-            
-            if is_warming_up:
-                # WARM-UP LIQUIDITY CHECKING (BASED ON QC PRIMER)
-                liquid_symbols = self._get_liquid_symbols_during_warmup(slice, chain_config)
-            else:
-                # POST WARM-UP LIQUIDITY CHECKING
-                liquid_symbols = self._get_liquid_symbols_post_warmup(slice, chain_config)
-        
-        except Exception as e:
-            self.algorithm.Error(f"FuturesManager: Error getting liquid symbols: {str(e)}")
-        
-        self.algorithm.Log(f"FuturesManager: Found {len(liquid_symbols)} liquid symbols out of {len(self.futures_symbols)} total")
-        return liquid_symbols
+        """Minimal placeholder for get_liquid_symbols."""
+        return []
 
     def _get_liquid_symbols_during_warmup(self, slice, chain_config):
         """
@@ -884,47 +811,8 @@ class FuturesManager:
         return priority_symbols
     
     def get_futures_info(self):
-        """Get comprehensive futures information using QC properties"""
-        info = {
-            'total_symbols': len(self.futures_symbols),
-            'liquid_symbols': len(self.get_liquid_symbols()),
-            'priority_breakdown': {},
-            'contract_details': {}
-        }
-        
-        # Priority breakdown
-        for priority in self.priority_groups.keys():
-            priority_symbols = self.get_priority_symbols(priority)
-            info['priority_breakdown'][priority] = len(priority_symbols)
-        
-        # Contract details using QC properties
-        for symbol in self.futures_symbols[:5]:  # Sample first 5
-            try:
-                if symbol in self.algorithm.Securities:
-                    security = self.algorithm.Securities[symbol]
-                    ticker = self._get_ticker_from_symbol(symbol)
-                    
-                    details = {
-                        'has_data': security.HasData if hasattr(security, 'HasData') else False,
-                        'is_tradable': security.IsTradable if hasattr(security, 'IsTradable') else False,
-                        'price': security.Price if hasattr(security, 'Price') else 0,
-                        'multiplier': self.get_contract_multiplier(symbol)
-                    }
-                    
-                    # Add QC's SymbolProperties info
-                    if hasattr(security, 'SymbolProperties'):
-                        props = security.SymbolProperties
-                        if hasattr(props, 'LotSize'):
-                            details['lot_size'] = props.LotSize
-                        if hasattr(props, 'MinimumPriceVariation'):
-                            details['min_price_variation'] = props.MinimumPriceVariation
-                    
-                    info['contract_details'][ticker] = details
-                    
-            except Exception as e:
-                continue
-        
-        return info
+        """Minimal placeholder for get_futures_info."""
+        return {'total_symbols': 0}
 
     def _validate_mapped_contract_liquidity(self, symbol, slice, post_warmup_config):
         """

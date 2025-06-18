@@ -24,11 +24,11 @@ class ThreeLayerOrchestrator:
     - FIXED: Uses correct method names for all components
     """
     
-    def __init__(self, algorithm, config_manager, shared_symbols=None):
+    def __init__(self, algorithm, config_manager):
         self.algorithm = algorithm
         self.config_manager = config_manager
         self.config = config_manager.get_config()
-        self.shared_symbols = shared_symbols or {}  # Shared symbols from OptimizedSymbolManager
+        # Symbols are now managed directly by QC's native methods
         
         # Three-layer components
         self.strategy_loader = None      # Layer 1: Dynamic strategy management
@@ -84,8 +84,7 @@ class ThreeLayerOrchestrator:
             
             self.strategy_loader = StrategyLoader(
                 algorithm=self.algorithm,
-                config_manager=self.config_manager,
-                shared_symbols=self.shared_symbols
+                config_manager=self.config_manager
             )
             
             # Load all enabled strategies dynamically

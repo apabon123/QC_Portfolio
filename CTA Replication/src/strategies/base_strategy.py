@@ -13,20 +13,19 @@ class BaseStrategy(ABC):
     All strategies should inherit from this class for consistency and maintainability.
     """
     
-    def __init__(self, algorithm, config_manager, strategy_name, shared_symbols=None):
+    def __init__(self, algorithm, config_manager, strategy_name):
         """
-        Initialize base strategy with centralized configuration and shared symbols.
+        Initialize base strategy with centralized configuration.
         CRITICAL: All configuration MUST come through config_manager.
         NO fallback logic allowed.
         """
         self.algorithm = algorithm
         self.config_manager = config_manager
         self.name = strategy_name
-        self.shared_symbols = shared_symbols or {}  # Shared symbols from OptimizedSymbolManager
         
         # Set up optimized data access
         self.data_accessor = getattr(algorithm, 'data_accessor', None)
-        self.futures_manager = getattr(algorithm, 'futures_manager', None)
+        # Symbols are now managed directly by QC's native methods
         
         try:
             # Get strategy configuration through centralized manager ONLY

@@ -29,8 +29,7 @@ try:
     from three_layer_orchestrator import ThreeLayerOrchestrator  
     from portfolio_execution_manager import PortfolioExecutionManager
     from system_reporter import SystemReporter
-    from universe import FuturesManager
-    from optimized_symbol_manager import OptimizedSymbolManager
+    # Removed FuturesManager and OptimizedSymbolManager - using QC native methods instead
     
     # Defensive import for AssetFilterManager
     try:
@@ -101,9 +100,8 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             self.SetCash(algo_config['initial_cash'])
             self.SetBenchmark(algo_config.get('benchmark', 'SPY'))
             
-            # STEP 6: Initialize OPTIMIZED symbol management (Phase 1)
-            self.symbol_manager = OptimizedSymbolManager(self, self.config_manager)
-            self.shared_symbols = self.symbol_manager.setup_shared_subscriptions()
+            # STEP 6: Symbol management now handled directly by QC native methods
+            # No need for custom symbol management - QC handles this internally
             
             # Initialize QC native data accessor (Phase 2)
             self.data_accessor = QCNativeDataAccessor(self)
@@ -119,13 +117,25 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self.data_integrity_checker
             )
             
-            # STEP 7: Initialize components with centralized config and shared symbols
-            self.orchestrator = ThreeLayerOrchestrator(self, self.config_manager, self.shared_symbols)
+            # STEP 7: Initialize components with centralized config
+            self.orchestrator = ThreeLayerOrchestrator(self, self.config_manager)
             self.execution_manager = PortfolioExecutionManager(self, self.config_manager)
             
-            # Initialize universe manager using shared symbols
-            self.universe_manager = FuturesManager(self, self.config_manager, self.shared_symbols)
-            self.universe_manager.initialize_universe()
+            # SIMPLIFIED: Direct QC-native universe setup (no FuturesManager needed)
+            self.Log("MAIN: Setting up futures universe using QC native methods...")
+            
+            try:
+                # Initialize universe directly using QC's native AddFuture
+                self.futures_symbols = []
+                self._setup_futures_universe()
+                
+                self.Log(f"MAIN: Universe setup completed with {len(self.futures_symbols)} futures")
+                
+            except Exception as e:
+                self.Error(f"MAIN: Universe setup failed: {str(e)}")
+                import traceback
+                self.Error(f"MAIN: Full traceback: {traceback.format_exc()}")
+                raise
             
             # Initialize performance reporting
             self.reporter = SystemReporter(self, self.config_manager)
@@ -157,6 +167,81 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
         except Exception as e:
             self.Error(f"CRITICAL ERROR during initialization: {str(e)}")
             raise
+
+    def _setup_futures_universe(self):
+        """
+        Setup futures universe using QC's native AddFuture method.
+        Replaces the complex FuturesManager with simple, direct QC integration.
+        """
+        try:
+            universe_config = self.config_manager.get_universe_config()
+            futures_config = universe_config.get('futures', {})
+            
+            self.Log("UNIVERSE: Setting up futures universe using QC native methods")
+            
+            # Get execution configuration for futures parameters
+            execution_config = self.config_manager.get_execution_config()
+            futures_params = execution_config.get('futures_config', {}).get('add_future_params', {})
+            
+            # Map string values to QuantConnect enums
+            resolution = getattr(Resolution, futures_params.get('resolution', 'Daily'))
+            data_mapping_mode = getattr(DataMappingMode, futures_params.get('data_mapping_mode', 'OpenInterest'))
+            data_normalization_mode = getattr(DataNormalizationMode, futures_params.get('data_normalization_mode', 'BackwardsRatio'))
+            contract_depth_offset = futures_params.get('contract_depth_offset', 0)
+            
+            # Add futures by category
+            total_added = 0
+            for category_name, category_data in futures_config.items():
+                self.Log(f"UNIVERSE: Processing category '{category_name}'")
+                
+                if isinstance(category_data, list):
+                    # Simple list of symbol strings
+                    for symbol_str in category_data:
+                        self._add_single_future(symbol_str, resolution, data_mapping_mode, 
+                                              data_normalization_mode, contract_depth_offset)
+                        total_added += 1
+                        
+                elif isinstance(category_data, dict):
+                    # Dictionary with symbol configurations
+                    for symbol_str, symbol_config in category_data.items():
+                        self._add_single_future(symbol_str, resolution, data_mapping_mode,
+                                              data_normalization_mode, contract_depth_offset)
+                        total_added += 1
+            
+            # Add expansion candidates if configured
+            expansion_config = universe_config.get('expansion_candidates', {})
+            for symbol_str, symbol_config in expansion_config.items():
+                self._add_single_future(symbol_str, resolution, data_mapping_mode,
+                                      data_normalization_mode, contract_depth_offset)
+                total_added += 1
+            
+            self.Log(f"UNIVERSE: Successfully added {total_added} futures contracts")
+            self.Log(f"UNIVERSE: Futures symbols: {[str(s) for s in self.futures_symbols]}")
+            
+        except Exception as e:
+            self.Error(f"UNIVERSE: Failed to setup futures universe: {str(e)}")
+            raise
+    
+    def _add_single_future(self, symbol_str, resolution, data_mapping_mode, 
+                          data_normalization_mode, contract_depth_offset):
+        """Add a single futures contract using QC's native AddFuture method."""
+        try:
+            # Use QC's native AddFuture method - this handles all Symbol object creation internally
+            future = self.AddFuture(
+                symbol_str,
+                resolution,
+                dataMappingMode=data_mapping_mode,
+                dataNormalizationMode=data_normalization_mode,
+                contractDepthOffset=contract_depth_offset
+            )
+            
+            # Store the symbol that QC created for us
+            self.futures_symbols.append(future.Symbol)
+            self.Log(f"UNIVERSE: Added future {symbol_str} -> {future.Symbol}")
+            
+        except Exception as e:
+            self.Error(f"UNIVERSE: Failed to add future {symbol_str}: {str(e)}")
+            # Don't raise - continue with other symbols
 
     def _setup_enhanced_warmup(self):
         """
