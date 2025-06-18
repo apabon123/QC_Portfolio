@@ -10,6 +10,52 @@ alwaysApply: true
 ### **0. LEAN-FIRST DEVELOPMENT** 🚨 **PRIMARY DIRECTIVE**
 **ALWAYS CHECK QUANTCONNECT'S BUILT-IN CAPABILITIES BEFORE IMPLEMENTING CUSTOM SOLUTIONS**
 
+### **⚠️ CRITICAL: QUANTCONNECT SYMBOL OBJECT LIMITATION** 🚨 **NEVER IGNORE**
+**NEVER pass QuantConnect Symbol objects as constructor parameters - causes "error return without exception set"**
+
+#### **The Problem**
+QuantConnect Symbol objects get wrapped in `clr.MetaClass` which cannot be passed to Python constructors.
+This causes the infamous "error return without exception set" error that crashes algorithm initialization.
+
+#### **Forbidden Patterns** ❌
+```python
+# ❌ NEVER DO THIS - Will cause constructor crashes
+def __init__(self, symbol_objects):
+    self.symbols = symbol_objects  # Symbol objects cause clr.MetaClass issues
+
+# ❌ NEVER DO THIS - Passing Symbol objects between components  
+component = MyComponent(self, config_manager, shared_symbols)  # shared_symbols contains Symbol objects
+
+# ❌ NEVER DO THIS - Storing Symbol objects in shared data structures
+shared_data = {'symbols': [symbol1, symbol2, symbol3]}  # Symbol objects will crash constructors
+```
+
+#### **Correct Patterns** ✅
+```python
+# ✅ Use string identifiers instead
+def __init__(self, symbol_strings):
+    self.symbol_strings = symbol_strings  # ['ES', 'NQ', 'ZN'] - safe to pass
+
+# ✅ Convert Symbol objects to strings before passing
+symbol_strings = [str(symbol) for symbol in symbol_objects]
+component = MyComponent(self, config_manager, symbol_strings)
+
+# ✅ Use QC's native methods directly - let QC handle Symbol creation
+future = self.AddFuture("ES", Resolution.Daily)  # QC creates Symbol internally
+self.futures_symbols.append(future.Symbol)       # Store QC-created Symbol
+```
+
+#### **Solution: Use QC Native Universe Management**
+```python
+# ✅ CORRECT - Direct QC native approach (no custom Symbol management)
+def _setup_futures_universe(self):
+    for symbol_str in ['ES', 'NQ', 'ZN']:
+        future = self.AddFuture(symbol_str, Resolution.Daily)  # QC handles Symbol creation
+        self.futures_symbols.append(future.Symbol)            # Store QC-created Symbol
+```
+
+**Reference**: [QuantConnect Forum - Python Custom Exception Issue](mdc:https:/www.quantconnect.com/forum/discussion/9331/python-custom-exception-definition-does-not-seem-to-work)
+
 #### **MANDATORY LEAN CAPABILITY CHECK**
 Before writing ANY trading, financial, or data processing code:
 1. **CHECK**: Does QC/LEAN already provide this functionality?

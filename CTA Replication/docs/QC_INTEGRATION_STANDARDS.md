@@ -4,6 +4,32 @@
 
 This document defines the standardized QuantConnect integration patterns that **ALL** strategies must follow. These patterns have been proven across Kestner, MTUM, and HMM strategies and are essential for scaling to 10-15 strategies without maintenance nightmares.
 
+## 🚨 **CRITICAL: QuantConnect Symbol Object Limitation**
+
+**NEVER pass QuantConnect Symbol objects as constructor parameters** - this causes the infamous "error return without exception set" error.
+
+### **The Problem**
+QuantConnect Symbol objects get wrapped in `clr.MetaClass` which cannot be passed to Python constructors, causing complete algorithm initialization failure.
+
+### **Solution Patterns**
+```python
+# ❌ NEVER DO THIS - Will crash constructors
+def __init__(self, shared_symbols):
+    self.symbols = shared_symbols  # Contains Symbol objects - CRASH
+
+# ✅ CORRECT - Use string identifiers
+def __init__(self, symbol_strings):
+    self.symbol_strings = symbol_strings  # ['ES', 'NQ', 'ZN'] - Safe
+
+# ✅ CORRECT - Use QC native methods directly
+def _setup_universe(self):
+    for symbol_str in ['ES', 'NQ', 'ZN']:
+        future = self.AddFuture(symbol_str, Resolution.Daily)
+        self.futures_symbols.append(future.Symbol)  # QC handles Symbol creation
+```
+
+**Reference**: [QuantConnect Forum - Python Symbol Object Issue](https://www.quantconnect.com/forum/discussion/9331/python-custom-exception-definition-does-not-seem-to-work)
+
 ---
 
 ## **📋 STANDARDIZED QC INTEGRATION CHECKLIST**

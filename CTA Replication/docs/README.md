@@ -26,6 +26,28 @@ The framework separates concerns across **three distinct layers** to solve criti
 - **Component Architecture**: Professional modular design with clean separation ✅
 - **Config Compliance**: All parameters loaded from config, zero hardcoded values ✅
 - **Data Optimization**: Three-phase optimization for maximum efficiency and QC integration ✅
+- **🆕 Universe Management**: **QC Native approach** - removed FuturesManager, uses direct AddFuture() ✅
+
+---
+
+## 🚨 **CRITICAL: QuantConnect Symbol Object Issue Resolved**
+
+**Major Architecture Change (January 2025)**: Removed `FuturesManager` and `OptimizedSymbolManager` due to a critical QuantConnect limitation.
+
+### **The Problem**
+- **Error**: `error return without exception set` during object construction
+- **Root Cause**: QuantConnect Symbol objects get wrapped in `clr.MetaClass` which cannot be passed as constructor parameters
+- **Impact**: Complete algorithm initialization failure
+
+### **The Solution** 
+- **Removed**: 1,700+ lines of custom symbol management code
+- **Added**: 50 lines of simple QC native calls using `self.AddFuture()`
+- **Result**: 97% code reduction, eliminates constructor errors, uses QC's intended patterns
+
+### **Key Learning**
+🚨 **NEVER pass QuantConnect Symbol objects as constructor parameters** - use string identifiers instead.
+
+**Documentation**: See `docs/FUTURESMANAGER_REMOVAL.md` for complete technical details.
 
 ---
 

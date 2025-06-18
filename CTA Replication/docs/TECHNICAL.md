@@ -3,7 +3,7 @@
 
 ## 🏗️ System Architecture Overview
 
-The framework uses a **component-based architecture** with four main components orchestrated by a lightweight main algorithm:
+The framework uses a **component-based architecture** with streamlined components orchestrated by a lightweight main algorithm:
 
 ```
 Main Algorithm (main.py) - Lightweight Orchestrator
@@ -11,9 +11,39 @@ Main Algorithm (main.py) - Lightweight Orchestrator
 ├── ThreeLayerOrchestrator (orchestrator.py) - Strategy Coordination ✅  
 ├── PortfolioExecutionManager (execution.py) - Execution & Monitoring ✅
 ├── SystemReporter (reporter.py) - Analytics & Reporting ✅
-├── FuturesManager (universe.py) - Universe Management ✅
-└── AssetFilterManager (universe.py) - Asset Filtering ✅
+├── QC Native Universe Setup (_setup_futures_universe) - Direct AddFuture() calls ✅
+└── AssetFilterManager (asset_filter_manager.py) - Asset Filtering ✅
 ```
+
+## 🚨 **CRITICAL: QuantConnect Symbol Object Issue (RESOLVED)**
+
+**Major Architecture Change**: Removed `FuturesManager` and `OptimizedSymbolManager` due to critical QuantConnect limitation.
+
+### **The Problem**
+- **Error**: `error return without exception set` during constructor calls
+- **Root Cause**: QuantConnect Symbol objects get wrapped in `clr.MetaClass` which cannot be passed as constructor parameters
+- **Impact**: Complete algorithm initialization failure
+
+### **The Solution**
+- **Removed**: 1,700+ lines of custom symbol management code
+- **Added**: Simple QC native universe setup using `self.AddFuture()`
+- **Result**: 97% code reduction, eliminates constructor errors, uses QC's intended patterns
+
+### **Architecture Evolution**
+```python
+# BEFORE: Complex custom management (BROKEN)
+OptimizedSymbolManager → shared_symbols → FuturesManager(shared_symbols) # ❌ Crash
+
+# AFTER: Simple QC native approach (WORKING)
+def _setup_futures_universe(self):
+    for symbol_str in ['ES', 'NQ', 'ZN']:
+        future = self.AddFuture(symbol_str, Resolution.Daily)  # QC handles Symbol creation
+        self.futures_symbols.append(future.Symbol)            # Store QC-created Symbol
+```
+
+**Critical Learning**: 🚨 **NEVER pass QuantConnect Symbol objects as constructor parameters** - use string identifiers instead.
+
+**Documentation**: See `docs/FUTURESMANAGER_REMOVAL.md` for complete technical details.
 
 ## 🚀 Three-Phase Data Optimization Architecture
 
