@@ -1,38 +1,164 @@
-# mtum_cta_strategy.py - INHERITS FROM BASE STRATEGY
+# mtum_cta_strategy.py - MTUM Futures Adaptation (Optimized)
 
 from AlgorithmImports import *
 import numpy as np
 from collections import deque
 from strategies.base_strategy import BaseStrategy
 
+class EfficientPortfolioVolatility:
+    """Efficient portfolio volatility using variance-covariance matrix."""
+    
+    def __init__(self, algorithm, symbols, lookback_days=252):
+        self.algorithm = algorithm
+        self.symbols = list(symbols)
+        self.lookback_days = lookback_days
+        self.return_data = {}
+        for symbol in self.symbols:
+            self.return_data[symbol] = deque(maxlen=lookback_days)
+        self.covariance_matrix = None
+        self.last_update_time = None
+        self.update_frequency_days = 5
+        algorithm.Log(f"EfficientPortfolioVol: Initialized for {len(symbols)} assets")
+    
+    def update_returns(self, slice_data):
+        """Update return data with new market data."""
+        try:
+            for symbol in self.symbols:
+                if symbol in slice_data.Bars:
+                    bar = slice_data.Bars[symbol]
+                    daily_return = 0.0
+                    if len(self.return_data[symbol]) > 0:
+                        prev_price = self.return_data[symbol][-1]['price']
+                        if prev_price > 0:
+                            daily_return = (bar.Close - prev_price) / prev_price
+                    
+                    self.return_data[symbol].append({
+                        'price': bar.Close,
+                        'return': daily_return,
+                        'time': slice_data.Time
+                    })
+        except Exception as e:
+            self.algorithm.Error(f"EfficientPortfolioVol: Error updating returns: {str(e)}")
+    
+    def should_update_covariance(self):
+        """Check if covariance matrix needs updating."""
+        if self.covariance_matrix is None or self.last_update_time is None:
+            return True
+        days_since_update = (self.algorithm.Time - self.last_update_time).days
+        return days_since_update >= self.update_frequency_days
+    
+    def calculate_covariance_matrix(self):
+        """Calculate variance-covariance matrix from return data."""
+        try:
+            # Only consider symbols that have at least one data point
+            lengths = [len(self.return_data[s]) for s in self.symbols if len(self.return_data[s]) > 0]
+            if not lengths:
+                # No data yet – cannot build covariance matrix
+                return None
+
+            min_data_points = min(lengths)
+            if min_data_points < 30:
+                # Insufficient history – wait until we have at least a month of data
+                return None
+            
+            return_matrix = []
+            for symbol in self.symbols:
+                returns = [data['return'] for data in self.return_data[symbol] if data['return'] != 0]
+                if len(returns) < 30:
+                    return None
+                return_matrix.append(returns[-min_data_points:])
+            
+            return_matrix = np.array(return_matrix)
+            covariance_matrix = np.cov(return_matrix) * 252
+            
+            self.covariance_matrix = covariance_matrix
+            self.last_update_time = self.algorithm.Time
+            
+            self.algorithm.Debug(f"EfficientPortfolioVol: Updated covariance matrix - "
+                               f"shape: {covariance_matrix.shape}, data points: {min_data_points}")
+            return covariance_matrix
+            
+        except Exception as e:
+            self.algorithm.Error(f"EfficientPortfolioVol: Error calculating covariance: {str(e)}")
+            return None
+    
+    def calculate_portfolio_volatility(self, weights_dict):
+        """Calculate portfolio volatility: σ_p = √(w^T × Σ × w)"""
+        try:
+            if not weights_dict:
+                return 0.20
+            
+            if self.should_update_covariance():
+                self.calculate_covariance_matrix()
+            
+            if self.covariance_matrix is None:
+                return self._fallback_volatility_estimation(weights_dict)
+            
+            weight_vector = np.array([weights_dict.get(symbol, 0.0) for symbol in self.symbols])
+            portfolio_variance = np.dot(weight_vector, np.dot(self.covariance_matrix, weight_vector))
+            portfolio_volatility = np.sqrt(max(0, portfolio_variance))
+            
+            return float(portfolio_volatility)
+            
+        except Exception as e:
+            self.algorithm.Error(f"EfficientPortfolioVol: Error in portfolio volatility: {str(e)}")
+            return self._fallback_volatility_estimation(weights_dict)
+    
+    def _fallback_volatility_estimation(self, weights_dict):
+        """Simple fallback when covariance matrix unavailable."""
+        gross_exposure = sum(abs(w) for w in weights_dict.values())
+        return gross_exposure * 0.18 * 0.7  # avg_vol * diversification_factor
+
 class MTUMCTAStrategy(BaseStrategy):
-    """
-    MTUM CTA Strategy Implementation
-    CRITICAL: All configuration comes through centralized config manager only
-    """
+    """MTUM CTA Strategy - Futures Adaptation"""
     
     def __init__(self, algorithm, config_manager, strategy_name):
-        """
-        Initialize MTUM CTA strategy with centralized configuration.
-        CRITICAL: NO fallback logic - fail fast if config is invalid.
-        """
-        # Initialize base strategy with centralized config
-        super().__init__(algorithm, config_manager, strategy_name)
+        """Initialize MTUM CTA strategy."""
+        self.algorithm = algorithm
+        self.config_manager = config_manager
+        self.name = strategy_name
+        self.current_targets = {}
+        self.symbol_data = {}
+        self.last_rebalance_date = None
+        self.last_update_time = None
+        self.trades_executed = 0
+        self.total_rebalances = 0
+        self.strategy_returns = []
         
         try:
-            # All configuration comes from centralized manager
-            self._initialize_strategy_components()
-            self.algorithm.Log(f"MTUMCTA: Strategy initialized successfully")
+            algorithm.Log(f"MTUMCTA: Starting initialization for {strategy_name}")
+            
+            self.config = config_manager.get_strategy_config(strategy_name)
+            algorithm.Log("MTUMCTA: Configuration loaded successfully")
+            
+            if not self.config.get('enabled', False):
+                error_msg = f"Strategy {strategy_name} is not enabled in configuration"
+                algorithm.Error(f"STRATEGY ERROR: {error_msg}")
+                raise ValueError(error_msg)
+            
+            self._initialize_mtum_components()
+            algorithm.Log("MTUMCTA: MTUM components initialized successfully")
+            
+            try:
+                super().__init__(algorithm, config_manager, strategy_name)
+                algorithm.Log("MTUMCTA: Base strategy initialization completed")
+            except Exception as e:
+                algorithm.Log(f"MTUMCTA: Base strategy initialization failed: {str(e)}, continuing anyway")
+            
+            algorithm.Log("MTUMCTA: Strategy initialized successfully")
             
         except Exception as e:
             error_msg = f"CRITICAL ERROR initializing MTUMCTA: {str(e)}"
-            self.algorithm.Error(error_msg)
+            algorithm.Error(error_msg)
             raise ValueError(error_msg)
     
     def _initialize_strategy_components(self):
-        """Initialize MTUM-specific components using centralized configuration."""
+        """Override base class method to prevent double initialization."""
+        pass
+    
+    def _initialize_mtum_components(self):
+        """Initialize MTUM-specific components."""
         try:
-            # Validate required configuration parameters
             required_params = [
                 'momentum_lookbacks_months', 'volatility_lookback_days', 'target_volatility',
                 'max_position_weight', 'warmup_days', 'enabled'
@@ -40,117 +166,202 @@ class MTUMCTAStrategy(BaseStrategy):
             
             for param in required_params:
                 if param not in self.config:
-                    error_msg = f"Missing required parameter '{param}' in MTUMCTA configuration"
+                    error_msg = f"Missing required parameter '{param}' in MTUM configuration"
                     self.algorithm.Error(f"CONFIG ERROR: {error_msg}")
                     raise ValueError(error_msg)
             
-            # Initialize strategy parameters from validated config
-            self.momentum_lookbacks_months = self.config['momentum_lookbacks_months']
+            # Core MTUM parameters
+            self.momentum_lookbacks = self.config['momentum_lookbacks_months']
             self.volatility_lookback_days = self.config['volatility_lookback_days']
             self.target_volatility = self.config['target_volatility']
             self.max_position_weight = self.config['max_position_weight']
-            self.warmup_days = self.config['warmup_days']
-            self.recent_exclusion_days = self.config.get('recent_exclusion_days', 22)
-            self.signal_standardization_clip = self.config.get('signal_standardization_clip', 3.0)
             
-            # Initialize tracking variables
-            self.symbol_data = {}
-            self.current_targets = {}
-            self.last_rebalance_date = None
-            self.last_update_time = None
+            # Futures adaptation parameters
+            self.momentum_threshold = self.config.get('momentum_threshold', 0.0)
+            self.enable_long_short = self.config.get('long_short_enabled', True)
+            self.signal_strength_weighting = self.config.get('signal_strength_weighting', True)
             
-            # Performance tracking
-            self.trades_executed = 0
-            self.total_rebalances = 0
-            self.strategy_returns = []
+            # Risk management
+            self.risk_free_rate = self.config.get('risk_free_rate', 0.02)
+            self.signal_clip_threshold = self.config.get('signal_standardization_clip', 3.0)
             
-            self.algorithm.Log(f"MTUMCTA: Initialized with momentum lookbacks {self.momentum_lookbacks_months}, "
-                             f"target volatility {self.target_volatility:.1%}")
+            # Initialize tracking containers
+            self.continuous_contracts = []
+            self.momentum_indicators = {}
+            self.volatility_indicators = {}
+            
+            # Initialize symbol data and QC indicators
+            self.initialize_symbol_data()
+            
+            # Initialize efficient portfolio volatility calculator
+            self.portfolio_vol_calculator = EfficientPortfolioVolatility(
+                algorithm=self.algorithm,
+                symbols=self.continuous_contracts,
+                lookback_days=252
+            )
+            
+            # Log initialization summary
+            self._log_initialization_summary()
             
         except Exception as e:
-            error_msg = f"Failed to initialize MTUMCTA components: {str(e)}"
-            self.algorithm.Error(f"CRITICAL ERROR: {error_msg}")
+            error_msg = f"Error initializing MTUM components: {str(e)}"
+            self.algorithm.Error(error_msg)
             raise ValueError(error_msg)
-    
-    # REMOVED: All fallback configuration logic
-    # All configuration MUST come through the centralized config manager
     
     def _log_initialization_summary(self):
         """Log initialization summary."""
-        self.algorithm.Log(f"{self.name}: Initialized with {self.config['momentum_lookbacks_months']} month lookbacks, "
-                          f"{self.config['target_volatility']:.1%} vol target")
+        mode = "LONG-SHORT" if self.enable_long_short else "LONG-ONLY"
+        weighting = "SIGNAL-STRENGTH" if self.signal_strength_weighting else "EQUAL-WEIGHT"
+        
+        self.algorithm.Log(f"{self.name}: MTUM Futures Adaptation - {self.momentum_lookbacks} month lookbacks, "
+                          f"{self.target_volatility:.1%} vol target, {mode} mode")
+        
+        self.algorithm.Log(f"{self.name}: Futures innovations - Threshold: {self.momentum_threshold:.3f}, "
+                          f"Weighting: {weighting}, 3Y volatility: {self.volatility_lookback_days}d")
+        
+        self.algorithm.Log(f"{self.name}: Preserves MTUM DNA - Risk-adjusted momentum, dual-period analysis, "
+                          f"±{self.signal_clip_threshold} std dev standardization")
     
     def initialize_symbol_data(self):
-        """Initialize SymbolData objects for all futures in the manager"""
+        """Initialize QC indicators for all futures."""
         try:
-            if self.futures_manager and hasattr(self.futures_manager, 'futures_data'):
-                symbols = list(self.futures_manager.futures_data.keys())
-            else:
-                symbols = ['ES', 'NQ', 'ZN']
+            self.continuous_contracts = []
+            for symbol in self.algorithm.Securities.Keys:
+                security = self.algorithm.Securities[symbol]
+                if security.Type == SecurityType.Future:
+                    symbol_str = str(symbol)
+                    if symbol_str.startswith('/'):
+                        self.continuous_contracts.append(symbol)
+                        self.algorithm.Log(f"{self.name}: Using continuous contract {symbol_str}")
+                    else:
+                        self.algorithm.Log(f"{self.name}: Ignoring underlying contract {symbol_str}")
             
-            for symbol in symbols:
-                self.symbol_data[symbol] = self._create_symbol_data(symbol)
-                
-                self.momentum_score_history[symbol] = deque(maxlen=252)
-        
-            self.algorithm.Log(f"{self.name}: Initialized {len(self.symbol_data)} symbol data objects")
+            if not self.continuous_contracts:
+                self.algorithm.Log(f"{self.name}: No continuous contracts found in SecuritiesManager. "
+                                   f"Strategy will wait for OnSecuritiesChanged events.")
+
+            self._setup_qc_indicators()
+            self._warmup_indicators()
+            
+            self.algorithm.Log(f"{self.name}: Initialized {len(self.continuous_contracts)} symbols with QC indicators")
             
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error initializing symbol data: {str(e)}")
-    
+            self.algorithm.Error(f"{self.name}: Error initializing QC indicators: {str(e)}")
+
+    def _setup_qc_indicators(self):
+        """Setup QuantConnect's native indicators."""
+        self.volatility_indicators = {}
+        
+        for symbol in self.continuous_contracts:
+            self.momentum_indicators[symbol] = {}
+            
+            for months in self.momentum_lookbacks:
+                period = months * 21
+                indicator_name = f"roc_{months}m"
+                self.momentum_indicators[symbol][indicator_name] = self.algorithm.ROC(symbol, period)
+            
+            # MTUM OFFICIAL: 3-year standard deviation of WEEKLY returns.
+            # To achieve this, we create a weekly consolidator.
+            weekly_consolidator = TradeBarConsolidator(timedelta(weeks=1))
+            self.algorithm.SubscriptionManager.AddConsolidator(symbol, weekly_consolidator)
+
+            # Create an indicator to calculate weekly returns (ROC with period 1 on weekly bars).
+            weekly_return_indicator = RateOfChange(1)
+            self.algorithm.RegisterIndicator(symbol, weekly_return_indicator, weekly_consolidator)
+
+            # Create an indicator to calculate the STD of those weekly returns over 3 years (156 weeks).
+            volatility_lookback_weeks = 52 * 3  # 156 weeks
+            weekly_std_indicator = StandardDeviation(volatility_lookback_weeks)
+            
+            # Pipe the output of the weekly return indicator into the STD indicator.
+            self.volatility_indicators[symbol] = IndicatorExtensions.Of(weekly_std_indicator, weekly_return_indicator)
+            
+            self.algorithm.Log(f"{self.name}: Setup QC native indicators for {symbol}")
+        
+        self.algorithm.Log(f"{self.name}: Setup complete - using QC native indicators + efficient var-cov matrix")
+
+    def _warmup_indicators(self):
+        """Simplified warmup - let QC handle it naturally."""
+        try:
+            warmup_days = max(365, self.volatility_lookback_days)
+            self.algorithm.Log(f"{self.name}: Using QC's automatic warmup system ({warmup_days} days)")
+            
+            total_indicators = 0
+            for symbol in self.continuous_contracts:
+                if symbol in self.momentum_indicators:
+                    total_indicators += len(self.momentum_indicators[symbol])
+                if symbol in self.volatility_indicators:
+                    total_indicators += 1
+            
+            self.algorithm.Log(f"{self.name}: Setup {total_indicators} QC indicators + var-cov matrix")
+            
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Indicator setup failed: {str(e)}")
+
     def update(self, slice_data):
         """Update strategy with new market data."""
         try:
+            self.last_update_time = slice_data.Time
+            
             if not self._validate_slice_data(slice_data):
-                return
+                return False
             
-            self.last_update_time = self.algorithm.Time
+            if hasattr(self, 'portfolio_vol_calculator'):
+                self.portfolio_vol_calculator.update_returns(slice_data)
             
-            # Update symbol data with new bars
-            for symbol, bar in slice_data.Bars.items():
-                if symbol in self.symbol_data:
-                    self.symbol_data[symbol].OnDataConsolidated(None, bar)
-                    
+            return True
+            
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error in update: {str(e)}")
+            self.algorithm.Error(f"{self.name}: Error updating strategy: {str(e)}")
+            return False
     
     def _validate_slice_data(self, slice_data):
-        """OPTIMIZED validation using centralized DataIntegrityChecker"""
+        """Validate slice data."""
         if not slice_data or not slice_data.Bars:
             return False
         
-        # Use centralized validation if available
         if hasattr(self.algorithm, 'data_integrity_checker'):
             return self.algorithm.data_integrity_checker.validate_slice(slice_data) is not None
         
-        # Fallback validation using QC built-ins
         for symbol, bar in slice_data.Bars.items():
             if symbol in self.algorithm.Securities:
                 security = self.algorithm.Securities[symbol]
-                if not (security.HasData and security.IsTradable and security.Price > 0):
+                has_data = security.HasData
+                price_valid = security.Price > 0
+                
+                is_tradeable = security.IsTradable
+                if not is_tradeable and hasattr(security, 'Mapped') and security.Mapped:
+                    mapped_contract = security.Mapped
+                    if mapped_contract in self.algorithm.Securities:
+                        is_tradeable = self.algorithm.Securities[mapped_contract].IsTradable
+                
+                if not (has_data and price_valid and (is_tradeable or self.algorithm.IsWarmingUp)):
                     return False
         return True
     
-    def generate_targets(self):
+    def generate_targets(self, slice=None):
         """Generate target positions based on momentum analysis."""
         try:
             if not self.should_rebalance(self.algorithm.Time):
                 return self.current_targets
             
-            signals = self.generate_signals()
+            signals = self.generate_signals(slice)
             if not signals:
                 return {}
             
-            # Apply position limits and volatility targeting
             targets = self._apply_position_limits(signals)
             targets = self._apply_volatility_targeting(targets)
-            
-            # Validate trade sizes
             targets = self._validate_trade_sizes(targets)
             
             self.current_targets = targets
             self.last_rebalance_date = self.algorithm.Time.date()
             self.total_rebalances += 1
+            
+            if targets:
+                formatted_targets = {str(symbol): weight for symbol, weight in targets.items()}
+                self.algorithm.Log(f"{self.name}: Final targets: {formatted_targets}")
+            else:
+                self.algorithm.Log(f"{self.name}: Final targets: No positions")
             
             return targets
             
@@ -167,551 +378,532 @@ class MTUMCTAStrategy(BaseStrategy):
                     'short_exposure': 0.0, 'num_positions': 0
                 }
             
-            long_exp = sum(max(0, w) for w in self.current_targets.values())
-            short_exp = sum(min(0, w) for w in self.current_targets.values())
+            long_exposure = sum(max(0, weight) for weight in self.current_targets.values())
+            short_exposure = sum(min(0, weight) for weight in self.current_targets.values())
             
             return {
-                'gross_exposure': long_exp + abs(short_exp),
-                'net_exposure': long_exp + short_exp,
-                'long_exposure': long_exp,
-                'short_exposure': abs(short_exp),
-                'num_positions': len([w for w in self.current_targets.values() if abs(w) > 0.01])
+                'gross_exposure': long_exposure + abs(short_exposure),
+                'net_exposure': long_exposure + short_exposure,
+                'long_exposure': long_exposure,
+                'short_exposure': short_exposure,
+                'num_positions': len(self.current_targets)
             }
             
         except Exception as e:
             self.algorithm.Error(f"{self.name}: Error calculating exposure: {str(e)}")
-            return {'gross_exposure': 0.0, 'net_exposure': 0.0, 'long_exposure': 0.0, 
+            return {'gross_exposure': 0.0, 'net_exposure': 0.0, 'long_exposure': 0.0,
                    'short_exposure': 0.0, 'num_positions': 0}
-    
+
     @property
     def IsAvailable(self):
         """Check if strategy is available for trading."""
+        if self.algorithm.IsWarmingUp:
+            return False
+        
         try:
-            if not self.symbol_data:
+            ready_symbols = 0
+            total_symbols = len(self.continuous_contracts)
+            
+            if total_symbols == 0:
                 return False
             
-            ready_count = sum(1 for sd in self.symbol_data.values() if sd.IsReady)
-            total_count = len(self.symbol_data)
+            for symbol in self.continuous_contracts:
+                if symbol in self.momentum_indicators and symbol in self.volatility_indicators:
+                    momentum_ready = all(indicator.IsReady for indicator in self.momentum_indicators[symbol].values())
+                    volatility_ready = self.volatility_indicators[symbol].IsReady
+                    
+                    if momentum_ready and volatility_ready:
+                        ready_symbols += 1
             
-            # Need at least 50% of symbols ready
-            return ready_count >= max(1, total_count * 0.5)
+            required_symbols = max(1, int(total_symbols * 0.5))
+            is_available = ready_symbols >= required_symbols
+            
+            return is_available
             
         except Exception as e:
             self.algorithm.Error(f"{self.name}: Error checking availability: {str(e)}")
             return False
-    
+
+    def get_availability_status(self):
+        """Get detailed availability status."""
+        try:
+            if self.algorithm.IsWarmingUp:
+                return "WARMING_UP"
+            
+            ready_symbols = 0
+            total_symbols = len(self.continuous_contracts)
+            
+            for symbol in self.continuous_contracts:
+                if symbol in self.momentum_indicators and symbol in self.volatility_indicators:
+                    momentum_ready = all(indicator.IsReady for indicator in self.momentum_indicators[symbol].values())
+                    volatility_ready = self.volatility_indicators[symbol].IsReady
+                    
+                    if momentum_ready and volatility_ready:
+                        ready_symbols += 1
+            
+            required_symbols = max(1, int(total_symbols * 0.5))
+            
+            if ready_symbols >= required_symbols:
+                return "AVAILABLE"
+            else:
+                return f"NOT_AVAILABLE ({ready_symbols}/{total_symbols} ready, need {required_symbols})"
+                
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error getting availability status: {str(e)}")
+            return "ERROR"
+
     def should_rebalance(self, current_time):
-        """Determine if strategy should rebalance (monthly)."""
+        """Check if strategy should rebalance."""
         if self.last_rebalance_date is None:
             return True
         
-        # Rebalance monthly on the first trading day
-        return (current_time.month != self.last_rebalance_date.month and
-                current_time.day <= 5)  # First 5 days of month
-    
+        rebalance_frequency = self.config.get('rebalance_frequency', 'monthly')
+        
+        if rebalance_frequency == 'monthly':
+            return current_time.month != self.last_rebalance_date.month
+        elif rebalance_frequency == 'weekly':
+            days_diff = (current_time.date() - self.last_rebalance_date).days
+            return days_diff >= 7
+        else:
+            return False
+
     def generate_signals(self, slice=None):
-        """
-        Generate MTUM-style signals for all liquid symbols.
-        
-        Args:
-            slice: Optional data slice for futures chain analysis
-            
-        Returns:
-            dict: Symbol -> signal strength mapping
-        """
+        """MTUM Futures Adaptation: Generate signals using absolute momentum thresholds."""
         signals = {}
-        liquid_symbols = self._get_liquid_symbols(slice)
         
-        if not liquid_symbols:
-            self.algorithm.Log(f"{self.name}: No liquid symbols for signal generation")
+        if self.algorithm.Time.day == 1:
+            self.debug_volatility_calculation()
+        
+        ready_symbols = []
+        for symbol in self.continuous_contracts:
+            if symbol in self.momentum_indicators and symbol in self.volatility_indicators:
+                momentum_ready = all(indicator.IsReady for indicator in self.momentum_indicators[symbol].values())
+                volatility_ready = self.volatility_indicators[symbol].IsReady
+                
+                if momentum_ready and volatility_ready:
+                    ready_symbols.append(symbol)
+        
+        if not ready_symbols:
+            self.algorithm.Log(f"{self.name}: No QC indicators ready for signal generation")
             return signals
         
-        # Calculate momentum scores for all symbols
+        # Calculate risk-adjusted momentum scores
         momentum_scores = {}
-        for symbol in liquid_symbols:
-            if symbol not in self.symbol_data:
-                continue
-            
-            symbol_data = self.symbol_data[symbol]
-            if not symbol_data.IsReady:
-                continue
-            
+        for symbol in ready_symbols:
             try:
-                # Calculate total return momentum (excluding recent period)
-                total_momentum = 0
-                valid_lookbacks = 0
+                volatility_indicator = self.volatility_indicators[symbol]
+                if not volatility_indicator.IsReady:
+                    continue
+                    
+                # This indicator now calculates the standard deviation of WEEKLY returns.
+                weekly_return_std = volatility_indicator.Current.Value
                 
-                for lookback_months in self.config['momentum_lookbacks_months']:
-                    momentum = symbol_data.GetTotalReturn(lookback_months)
-                    if momentum is not None:
-                        total_momentum += momentum
-                        valid_lookbacks += 1
+                # Annualize the weekly volatility.
+                volatility = weekly_return_std * (52 ** 0.5)
                 
-                if valid_lookbacks > 0:
-                    avg_momentum = total_momentum / valid_lookbacks
-                    momentum_scores[symbol] = avg_momentum
+                if volatility <= 0:
+                    self.algorithm.Log(f"{self.name}: Invalid volatility for {symbol}: {volatility}")
+                    continue
+                
+                individual_scores = []
+                for indicator_name, roc_indicator in self.momentum_indicators[symbol].items():
+                    if roc_indicator.IsReady:
+                        raw_momentum = roc_indicator.Current.Value
+                        months = int(indicator_name.replace('roc_', '').replace('m', ''))
+                        
+                        if raw_momentum > -1:
+                            annualized_momentum = ((1 + raw_momentum) ** (12.0 / months)) - 1
+                        else:
+                            annualized_momentum = raw_momentum
+                        
+                        risk_adjusted_score = annualized_momentum / volatility
+                        individual_scores.append(risk_adjusted_score)
+                        
+                        self.algorithm.Debug(f"{self.name}: {symbol} {months}M - "
+                                           f"Raw: {raw_momentum:.3f}, Ann: {annualized_momentum:.3f}, "
+                                           f"Vol: {volatility:.3f}, Risk-Adj: {risk_adjusted_score:.3f}")
+                
+                if len(individual_scores) > 0:
+                    momentum_scores[symbol] = individual_scores
                     
             except Exception as e:
-                self.algorithm.Error(f"{self.name}: Error processing {symbol}: {str(e)}")
+                self.algorithm.Error(f"{self.name}: Error processing QC indicators for {symbol}: {str(e)}")
                 continue
         
         if momentum_scores:
-            # Standardize scores
-            standardized_scores = self._standardize_scores(momentum_scores)
+            standardized_scores = self._mtum_standardize_and_average(momentum_scores)
+            qualified_signals = self._apply_absolute_momentum_thresholds(standardized_scores)
+            signals = self._convert_to_signal_strength_weights(qualified_signals)
             
-            # Convert to position weights
-            signals = self._convert_scores_to_weights(standardized_scores)
+            self.algorithm.Log(f"{self.name}: Generated {len(signals)} signals from {len(qualified_signals)} qualified "
+                             f"(threshold: {self.momentum_threshold:.3f})")
         
         return signals
-    
+
     def _get_liquid_symbols(self, slice=None):
-        """Get liquid symbols from futures manager."""
-        if self.futures_manager and hasattr(self.futures_manager, 'get_liquid_symbols'):
-            return self.futures_manager.get_liquid_symbols(slice)
-        return list(self.symbol_data.keys())
-    
-    def _standardize_scores(self, scores, clip_at=None):
-        """Standardize momentum scores using z-score normalization."""
-        if not scores:
-            return {}
-        
-        if clip_at is None:
-            clip_at = self.config['signal_standardization_clip']
-        
+        """Get liquid symbols using QC native approach."""
         try:
-            values = list(scores.values())
-            mean_val = np.mean(values)
-            std_val = np.std(values)
+            liquid_symbols = []
             
-            if std_val <= 0:
-                return {symbol: 0.0 for symbol in scores}
+            for symbol in self.algorithm.Securities.Keys:
+                security = self.algorithm.Securities[symbol]
+                
+                if security.Type == SecurityType.Future:
+                    symbol_str = str(symbol)
+                    
+                    if symbol_str.startswith('/'):
+                        if security.HasData:
+                            is_tradeable = security.IsTradable
+                            if not is_tradeable and hasattr(security, 'Mapped') and security.Mapped:
+                                mapped_contract = security.Mapped
+                                if mapped_contract in self.algorithm.Securities:
+                                    is_tradeable = self.algorithm.Securities[mapped_contract].IsTradable
+                            
+                            if self.algorithm.IsWarmingUp:
+                                if security.HasData:
+                                    liquid_symbols.append(symbol)
+                            else:
+                                if security.HasData and is_tradeable:
+                                    liquid_symbols.append(symbol)
             
-            standardized = {}
-            for symbol, score in scores.items():
-                z_score = (score - mean_val) / std_val
-                # Clip extreme values
-                clipped_score = max(-clip_at, min(clip_at, z_score))
-                standardized[symbol] = clipped_score
-            
-            return standardized
+            return liquid_symbols
             
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Score standardization error: {str(e)}")
+            self.algorithm.Error(f"{self.name}: Error getting liquid symbols: {str(e)}")
+            return list(self.symbol_data.keys()) if self.symbol_data else []
+
+    def _mtum_standardize_and_average(self, momentum_scores):
+        """Average the risk-adjusted momentum scores across timeframes per asset.
+        Each individual period score is optionally clipped to ±`signal_clip_threshold` before averaging.
+        This replaces the previous cross-sectional standardization logic.
+        """
+        if not momentum_scores:
+            return {}
+        
+        try:
+            final_scores = {}
+            clip = self.signal_clip_threshold if hasattr(self, 'signal_clip_threshold') else 3.0
+            
+            for symbol, individual_scores in momentum_scores.items():
+                if not individual_scores:
+                    continue
+                # Clip each period's score to avoid extreme outliers
+                clipped_scores = [max(-clip, min(clip, s)) for s in individual_scores]
+                final_scores[symbol] = float(np.mean(clipped_scores))
+            
+            return final_scores
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error averaging momentum scores: {str(e)}")
+            return {}
+
+    def _apply_absolute_momentum_thresholds(self, standardized_scores):
+        """Apply absolute momentum thresholds - Futures Innovation."""
+        if not standardized_scores:
+            return {}
+        
+        try:
+            qualified_signals = {}
+            
+            for symbol, score in standardized_scores.items():
+                if abs(score) > self.momentum_threshold:
+                    qualified_signals[symbol] = score
+                    
+                    self.algorithm.Debug(f"{self.name}: {symbol} qualified - Score: {score:.3f} "
+                                       f"(threshold: {self.momentum_threshold:.3f})")
+                else:
+                    self.algorithm.Debug(f"{self.name}: {symbol} below threshold - Score: {score:.3f} "
+                                       f"< {self.momentum_threshold:.3f}")
+            
+            total_assets = len(standardized_scores)
+            qualified_assets = len(qualified_signals)
+            self.algorithm.Log(f"{self.name}: Threshold filtering - {qualified_assets}/{total_assets} assets qualified "
+                             f"(threshold: {self.momentum_threshold:.3f})")
+            
+            return qualified_signals
+            
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error applying momentum thresholds: {str(e)}")
             return {}
     
-    def _convert_scores_to_weights(self, scores):
-        """Convert standardized scores to position weights."""
-        if not scores:
+    def _convert_to_signal_strength_weights(self, qualified_signals):
+        """Convert qualified signals to portfolio weights using signal-strength weighting."""
+        if not qualified_signals:
             return {}
         
         try:
             weights = {}
             
-            if self.config['long_short_enabled']:
-                # Long-short strategy
-                for symbol, score in scores.items():
-                    # Convert score to weight (normalized by number of positions)
-                    weight = score / len(scores)
+            if self.enable_long_short:
+                total_abs_signals = sum(abs(signal) for signal in qualified_signals.values())
+                
+                if total_abs_signals == 0:
+                    return {}
+                
+                for symbol, signal in qualified_signals.items():
+                    weight = signal / total_abs_signals
                     weights[symbol] = weight
+                    
+                    direction = "LONG" if signal > 0 else "SHORT"
+                    self.algorithm.Debug(f"{self.name}: {symbol} {direction} weight: {weight:.3f} "
+                                       f"(signal: {signal:.3f})")
+                
+                net_exposure = sum(weights.values())
+                gross_exposure = sum(abs(w) for w in weights.values())
+                
+                self.algorithm.Log(f"{self.name}: Signal-strength weighting - Net: {net_exposure:.1%}, "
+                                 f"Gross: {gross_exposure:.1%}")
+                
             else:
-                # Long-only strategy
-                positive_scores = {s: max(0, score) for s, score in scores.items()}
-                total_positive = sum(positive_scores.values())
+                positive_signals = {s: max(0, signal) for s, signal in qualified_signals.items()}
+                total_positive = sum(positive_signals.values())
                 
                 if total_positive > 0:
-                    for symbol, score in positive_scores.items():
-                        weights[symbol] = score / total_positive
+                    for symbol, signal in positive_signals.items():
+                        if signal > 0:
+                            weights[symbol] = signal / total_positive
+                            self.algorithm.Debug(f"{self.name}: {symbol} LONG weight: {weights[symbol]:.3f}")
+            
+            if weights:
+                weights = self._apply_position_limits(weights)
             
             return weights
             
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Weight conversion error: {str(e)}")
+            self.algorithm.Error(f"{self.name}: Error converting to signal-strength weights: {str(e)}")
             return {}
-    
-    def _apply_position_limits(self, weights):
-        """Apply individual position size limits."""
-        limited_weights = {}
-        max_weight = self.config['max_position_weight']
-        
-        for symbol, weight in weights.items():
-            limited_weights[symbol] = max(-max_weight, min(max_weight, weight))
-        
-        return limited_weights
-    
+
     def _apply_volatility_targeting(self, weights):
         """Apply portfolio-level volatility targeting."""
+        if not weights:
+            return weights
+        
         try:
-            if not weights:
+            current_vol = self._calculate_portfolio_volatility(weights)
+            
+            if current_vol <= 0:
+                self.algorithm.Log(f"{self.name}: Invalid portfolio volatility: {current_vol}, returning original weights")
                 return weights
             
-            # Calculate portfolio volatility
-            portfolio_vol = self._calculate_portfolio_volatility(weights)
-            target_vol = self.config['target_volatility']
+            vol_scaling_factor = self.target_volatility / current_vol
             
-            if portfolio_vol > 0:
-                vol_scalar = target_vol / portfolio_vol
-                vol_scalar = min(vol_scalar, self.config['max_leverage_multiplier'])
-                
-                scaled_weights = {}
-                for symbol, weight in weights.items():
-                    scaled_weights[symbol] = weight * vol_scalar
-                
-                return scaled_weights
+            scaled_weights = {}
+            for symbol, weight in weights.items():
+                scaled_weights[symbol] = weight * vol_scaling_factor
             
-            return weights
+            if abs(vol_scaling_factor - 1.0) > 0.05:
+                self.algorithm.Log(f"{self.name}: Volatility targeting - Current: {current_vol:.1%}, "
+                                 f"Target: {self.target_volatility:.1%}, Scale: {vol_scaling_factor:.2f}")
+            
+            return scaled_weights
             
         except Exception as e:
             self.algorithm.Error(f"{self.name}: Error in volatility targeting: {str(e)}")
             return weights
     
-    def _validate_trade_sizes(self, targets):
-        """Validate and filter trade sizes."""
-        validated_targets = {}
-        min_threshold = self.config['min_weight_threshold']
+    def _apply_position_limits(self, weights):
+        """Apply individual position size limits."""
+        limited_weights = {}
+        max_weight = self.max_position_weight
         
-        for symbol, weight in targets.items():
-            if abs(weight) >= min_threshold:
-                validated_targets[symbol] = weight
+        for symbol, weight in weights.items():
+            limited_weights[symbol] = max(-max_weight, min(max_weight, weight))
         
-        return validated_targets
-    
+        return limited_weights
+
     def _calculate_portfolio_volatility(self, weights):
-        """Calculate expected portfolio volatility."""
+        """Calculate portfolio volatility using efficient var-cov matrix."""
         try:
             if not weights:
-                return 0.0
+                return self.target_volatility
             
-            # Simple approach: weighted average of individual volatilities
-            total_vol = 0.0
-            total_weight = 0.0
+            valid_weights = {symbol: weight for symbol, weight in weights.items() if abs(weight) > 0.001}
+            if not valid_weights:
+                return self.target_volatility
+            
+            if hasattr(self, 'portfolio_vol_calculator'):
+                portfolio_vol = self.portfolio_vol_calculator.calculate_portfolio_volatility(valid_weights)
+                
+                if 0.05 <= portfolio_vol <= 0.50:
+                    if self.algorithm.Time.day == 1:
+                        self.algorithm.Log(f"{self.name}: Var-cov portfolio vol: {portfolio_vol:.1%} "
+                                         f"(gross exposure: {sum(abs(w) for w in valid_weights.values()):.1%})")
+                    return portfolio_vol
+                else:
+                    self.algorithm.Log(f"{self.name}: Var-cov volatility out of range: {portfolio_vol:.1%}, using fallback")
+            
+            return self._ultra_simple_portfolio_volatility(valid_weights)
+            
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error in var-cov portfolio volatility: {str(e)}")
+            return self._ultra_simple_portfolio_volatility(weights)
+
+    def _ultra_simple_portfolio_volatility(self, weights):
+        """Ultra-simple portfolio volatility calculation."""
+        try:
+            if not weights:
+                return self.target_volatility
+            
+            # Get weighted average volatility
+            weighted_vol = 0.0
+            total_abs_weight = 0.0
             
             for symbol, weight in weights.items():
-                if symbol in self.symbol_data and self.symbol_data[symbol].IsReady:
-                    vol = self.symbol_data[symbol].GetVolatility()
-                    if vol > 0:
-                        total_vol += abs(weight) * vol
-                        total_weight += abs(weight)
+                if abs(weight) > 0.001:
+                    symbol_vol = self._get_default_volatility(symbol)
+                    abs_weight = abs(weight)
+                    weighted_vol += symbol_vol * abs_weight
+                    total_abs_weight += abs_weight
             
-            return total_vol / total_weight if total_weight > 0 else 0.0
+            if total_abs_weight > 0:
+                avg_vol = weighted_vol / total_abs_weight
+                gross_leverage = total_abs_weight
+                
+                # Apply simple diversification benefit
+                diversification_factor = 0.75 if len(weights) > 1 else 1.0
+                portfolio_vol = avg_vol * gross_leverage * diversification_factor
+                
+                return max(0.05, min(0.50, portfolio_vol))
+            
+            return self.target_volatility
             
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error calculating portfolio volatility: {str(e)}")
-            return 0.0
-    
-    def _log_signal_summary(self, final_targets, momentum_scores):
-        """Log summary of generated signals."""
-        if final_targets:
-            active_positions = len([w for w in final_targets.values() if abs(w) > 0.01])
-            gross_exposure = sum(abs(w) for w in final_targets.values())
-            self.algorithm.Log(f"{self.name}: Generated {active_positions} positions, "
-                              f"{gross_exposure:.1%} gross exposure")
-    
+            self.algorithm.Error(f"{self.name}: Error in ultra-simple portfolio volatility: {str(e)}")
+            return self.target_volatility
+
+    def _get_default_volatility(self, symbol):
+        """Get default volatility for asset class."""
+        try:
+            symbol_str = str(symbol).upper()
+            
+            # Commodity futures
+            if any(commodity in symbol_str for commodity in ['CL', 'GC', 'SI', 'HG', 'NG']):
+                return 0.25
+            # Equity futures
+            elif any(equity in symbol_str for equity in ['ES', 'NQ', 'YM', 'RTY']):
+                return 0.20
+            # Bond futures
+            elif any(bond in symbol_str for bond in ['ZN', 'ZB', 'ZF', 'ZT']):
+                return 0.08
+            # FX futures
+            elif any(fx in symbol_str for fx in ['6E', '6J', '6B', '6A', '6C']):
+                return 0.12
+            else:
+                return 0.18
+                
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error getting default volatility for {symbol}: {str(e)}")
+            return 0.18
+
+    def _validate_trade_sizes(self, targets):
+        """Validate trade sizes are reasonable."""
+        if not targets:
+            return targets
+        
+        validated_targets = {}
+        for symbol, target in targets.items():
+            if abs(target) >= 0.001:  # 0.1% minimum
+                validated_targets[symbol] = target
+        
+        return validated_targets
+
     def execute_trades(self, new_targets, rollover_tags=None):
-        """Execute trades with comprehensive error handling."""
+        """Execute trades based on target positions."""
         try:
             if not new_targets:
-                return {'success': True, 'trades_executed': 0, 'errors': []}
-            
-            execution_results = {'success': True, 'trades_executed': 0, 'errors': []}
+                return
             
             for symbol, target_weight in new_targets.items():
-                try:
-                    if abs(target_weight) < self.config['min_weight_threshold']:
-                        continue
-                    
-                    # Calculate position size
-                    portfolio_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
-                    target_value = target_weight * portfolio_value
-                    
-                    if abs(target_value) < self.config['min_trade_value']:
-                        continue
-                    
-                    # Get current position
-                    current_quantity = 0
-                    if symbol in self.algorithm.Portfolio:
-                        current_quantity = self.algorithm.Portfolio[symbol].Quantity
-                    
-                    # Calculate required trade
-                    if symbol in self.algorithm.Securities:
-                        security = self.algorithm.Securities[symbol]
-                        if security.Price > 0:
-                            contract_value = security.Price * security.SymbolProperties.ContractMultiplier
-                            target_quantity = int(target_value / contract_value)
-                            trade_quantity = target_quantity - current_quantity
-                            
-                            if abs(trade_quantity) > 0:
-                                # Determine order tag
-                                tag = f"{self.name}_Rebalance_{self.algorithm.Time.strftime('%Y%m%d')}"
-                                if rollover_tags and symbol in rollover_tags:
-                                    tag = rollover_tags[symbol]
-                                
-                                # Execute trade
-                                order_ticket = self.algorithm.MarketOrder(symbol, trade_quantity, tag=tag)
-                                
-                                if order_ticket:
-                                    execution_results['trades_executed'] += 1
-                                    self.trades_executed += 1
-                                else:
-                                    execution_results['errors'].append(f"Failed to place order for {symbol}")
-                
-                except Exception as e:
-                    error_msg = f"Error trading {symbol}: {str(e)}"
-                    execution_results['errors'].append(error_msg)
-                    self.algorithm.Error(f"{self.name}: {error_msg}")
-            
-            if execution_results['errors']:
-                execution_results['success'] = False
-            
-            return execution_results
-            
+                if abs(target_weight) > 0.001:
+                    # Use base class or algorithm's execution methods
+                    if hasattr(self.algorithm, 'SetHoldings'):
+                        self.algorithm.SetHoldings(symbol, target_weight)
+                        self.trades_executed += 1
+                        
+                        direction = "LONG" if target_weight > 0 else "SHORT"
+                        self.algorithm.Log(f"{self.name}: {direction} {symbol} {abs(target_weight):.1%}")
+                        
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Critical error in execute_trades: {str(e)}")
-            return {'success': False, 'trades_executed': 0, 'errors': [str(e)]}
-    
+            self.algorithm.Error(f"{self.name}: Error executing trades: {str(e)}")
+
     def get_performance_metrics(self):
         """Get strategy performance metrics."""
         try:
+            exposure = self.get_exposure()
+            
             return {
-                'total_trades': self.trades_executed,
                 'total_rebalances': self.total_rebalances,
-                'avg_gross_exposure': np.mean(self.gross_exposure_history) if self.gross_exposure_history else 0.0,
-                'strategy_name': self.name,
-                'last_update': self.last_update_time,
-                'config_description': self.config.get('description', 'MTUM CTA Strategy')
+                'trades_executed': self.trades_executed,
+                'gross_exposure': exposure['gross_exposure'],
+                'net_exposure': exposure['net_exposure'],
+                'num_positions': exposure['num_positions'],
+                'is_available': self.IsAvailable
             }
+            
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error getting performance metrics: {str(e)}")
-            return {'strategy_name': self.name, 'error': str(e)}
-    
+            self.algorithm.Error(f"{self.name}: Error calculating performance metrics: {str(e)}")
+            return {}
+
     def log_status(self):
         """Log current strategy status."""
         try:
             exposure = self.get_exposure()
-            self.algorithm.Log(f"{self.name} Status: {exposure['num_positions']} positions, "
-                              f"{exposure['gross_exposure']:.1%} gross exposure")
+            availability = self.get_availability_status()
+            
+            self.algorithm.Log(f"{self.name}: Status - {availability}, "
+                             f"Positions: {exposure['num_positions']}, "
+                             f"Net: {exposure['net_exposure']:.1%}, "
+                             f"Gross: {exposure['gross_exposure']:.1%}")
+            
         except Exception as e:
             self.algorithm.Error(f"{self.name}: Error logging status: {str(e)}")
-    
-    def get_config_status(self):
-        """Get configuration status."""
-        try:
-            return {
-                'strategy_name': self.name,
-                'enabled': self.config.get('enabled', True),
-                'rebalance_frequency': self.config.get('rebalance_frequency', 'monthly'),
-                'target_volatility': self.config.get('target_volatility', 0.2),
-                'max_position_weight': self.config.get('max_position_weight', 0.5),
-                'momentum_lookbacks': self.config.get('momentum_lookbacks_months', [6, 12]),
-                'long_short_enabled': self.config.get('long_short_enabled', True),
-                'description': self.config.get('description', 'MTUM CTA Strategy'),
-                'config_source': 'config_manager' if self.config_manager else 'fallback'
-            }
-        except Exception as e:
-            return {'strategy_name': self.name, 'error': str(e)}
 
     def _create_symbol_data(self, symbol):
-        """Create MTUM-specific symbol data object."""
-        return self.SymbolData(
-            algorithm=self.algorithm,
-            symbol=symbol,
-            lookbackMonthsList=self.config['momentum_lookbacks_months'],
-            volLookbackDays=self.config['volatility_lookback_days'],
-            recent_exclusion_days=self.config['recent_exclusion_days']
-        )
-
-    class SymbolData:
-        """MTUM-specific SymbolData for momentum calculations."""
-
-        def __init__(self, algorithm, symbol, lookbackMonthsList, volLookbackDays, recent_exclusion_days=22):
-            self.algorithm = algorithm
-            self.symbol = symbol
-            self.lookbackMonthsList = lookbackMonthsList
-            self.volLookbackDays = volLookbackDays
-            self.recent_exclusion_days = recent_exclusion_days
-
-            # Rolling windows
-            max_lookback_days = max(lookbackMonthsList) * 22 + volLookbackDays + 50  # 22 trading days/month
-            self.price_window = RollingWindow[float](max_lookback_days)
-            self.monthly_prices = deque(maxlen=max(lookbackMonthsList) + 5)
-            
-            # Track data quality
-            self.data_points_received = 0
-            self.last_update_time = None
-            self.has_sufficient_data = True
-            self.data_availability_error = None
-
-            # Setup consolidator
-            try:
-                self.consolidator = TradeBarConsolidator(timedelta(days=1))
-                self.consolidator.DataConsolidated += self.OnDataConsolidated
-                algorithm.SubscriptionManager.AddConsolidator(symbol, self.consolidator)
-            except Exception as e:
-                algorithm.Log(f"MTUM SymbolData {symbol}: Consolidator setup error: {str(e)}")
-
-            # Initialize with history
-            self._initialize_with_history()
-
-        def _initialize_with_history(self):
-            """Initialize with historical data using CENTRALIZED data provider."""
-            try:
-                history_days = self.volLookbackDays + 100
-                
-                # Use centralized data provider if available
-                if hasattr(self.algorithm, 'data_integrity_checker') and self.algorithm.data_integrity_checker:
-                    history = self.algorithm.data_integrity_checker.get_history(self.symbol, history_days, Resolution.Daily)
-                else:
-                    # Fallback to direct API call (not recommended)
-                    self.algorithm.Log(f"MTUM SymbolData {self.symbol}: WARNING - No centralized cache, using direct History API")
-                    history = self.algorithm.History(self.symbol, history_days, Resolution.Daily)
-                
-                if history is None or history.empty:
-                    self.algorithm.Log(f"No history available for {self.symbol}")
-                    self.has_sufficient_data = False
-                    self.data_availability_error = "No historical data available"
-                    return
-                
-                # Process historical data
-                for index, row in history.iterrows():
-                    close_price = row['close']
-                    self.price_window.Add(close_price)
-                    self.data_points_received += 1
-                
-                # Update monthly prices
-                self._update_monthly_prices()
-                
-                self.algorithm.Log(f"MTUM SymbolData {self.symbol}: Initialized with {len(history)} bars")
-
-            except Exception as e:
-                self.algorithm.Error(f"MTUM SymbolData {self.symbol}: History initialization error: {str(e)}")
-                self.has_sufficient_data = False
-                self.data_availability_error = f"History error: {str(e)}"
-
-        @property
-        def IsReady(self):
-            """Check if symbol data is ready for calculations."""
-            if not self.has_sufficient_data:
-                return False
-            
-            min_data_points = max(self.lookbackMonthsList) * 22 + self.recent_exclusion_days + 10
-            return (self.price_window.Count >= min_data_points and 
-                   len(self.monthly_prices) >= max(self.lookbackMonthsList))
-
-        def OnDataConsolidated(self, sender, bar: TradeBar):
-            """Process new daily bar."""
-            if bar is None or bar.Close <= 0:
-                return
-            
-            try:
-                self.price_window.Add(float(bar.Close))
-                self.data_points_received += 1
-                self.last_update_time = bar.Time
-                
-                # Update monthly prices on month-end
-                if bar.Time.day >= 25:  # Approximate month-end
-                    self._update_monthly_prices()
-                
-            except Exception as e:
-                self.algorithm.Error(f"MTUM SymbolData {self.symbol}: OnDataConsolidated error: {str(e)}")
-
-        def _update_monthly_prices(self):
-            """Update monthly price snapshots."""
-            if self.price_window.Count > 0:
-                current_price = self.price_window[0]
-                if not self.monthly_prices or current_price != self.monthly_prices[-1]:
-                    self.monthly_prices.append(current_price)
-
-        def GetTotalReturn(self, lookbackMonths):
-            """Calculate total return over specified lookback period (excluding recent period)."""
-            try:
-                if not self.IsReady or len(self.monthly_prices) < lookbackMonths + 1:
-                    return None
-                
-                # Get current price (excluding recent period)
-                recent_days_back = min(self.recent_exclusion_days, self.price_window.Count - 1)
-                current_price = self.price_window[recent_days_back] if recent_days_back > 0 else self.price_window[0]
-                
-                # Get lookback price
-                lookback_price = self.monthly_prices[-(lookbackMonths + 1)]
-                
-                if lookback_price <= 0:
-                    return None
-                
-                # Calculate total return
-                total_return = (current_price / lookback_price) - 1
-                return total_return
-                
-            except Exception as e:
-                return None
-
-        def GetVolatility(self, lookbackMonths=None):
-            """Calculate volatility over specified period."""
-            try:
-                if not self.IsReady:
-                    return None
-                
-                # Use default volatility lookback if not specified
-                lookback_days = self.volLookbackDays if lookbackMonths is None else lookbackMonths * 22
-                
-                if self.price_window.Count < lookback_days + 1:
-                    return None
-                
-                # Calculate daily returns
-                returns = []
-                for i in range(1, min(lookback_days + 1, self.price_window.Count)):
-                    if self.price_window[i] > 0:
-                        daily_return = (self.price_window[i-1] / self.price_window[i]) - 1
-                        returns.append(daily_return)
-                
-                if len(returns) < 10:
-                    return None
-                
-                vol = np.std(returns) * np.sqrt(252)  # Annualized
-                return vol if vol > 0 else None
-                
-            except Exception as e:
-                return None
-
-        def GetDataQuality(self):
-            """Get data quality metrics."""
-            return {
-                'symbol': str(self.symbol),
-                'data_points_received': self.data_points_received,
-                'price_window_count': self.price_window.Count,
-                'monthly_prices_count': len(self.monthly_prices),
-                'lookback_months': self.lookbackMonthsList,
-                'vol_lookback_days': self.volLookbackDays,
-                'recent_exclusion_days': self.recent_exclusion_days,
-                'is_ready': self.IsReady,
-                'last_update': self.last_update_time
-            }
-
-        def Dispose(self):
-            """Clean disposal of resources."""
-            try:
-                if hasattr(self, 'consolidator') and self.consolidator:
-                    self.algorithm.SubscriptionManager.RemoveConsolidator(self.symbol, self.consolidator)
-                self.price_window.Reset()
-                self.monthly_prices.clear()
-            except:
-                pass
+        """Create symbol data container."""
+        return {'symbol': symbol, 'initialized': True}
 
     def OnSecuritiesChanged(self, changes):
-        """Handle securities changes."""
+        """Handle securities changes - only track continuous contracts."""
         try:
-            # Add new securities
             for security in changes.AddedSecurities:
-                symbol = security.Symbol
-                if symbol not in self.symbol_data:
-                    self.symbol_data[symbol] = self._create_symbol_data(symbol)
-                    self.algorithm.Log(f"{self.name}: Added symbol data for {symbol}")
-            
-            # Remove securities
-            for security in changes.RemovedSecurities:
-                symbol = security.Symbol
-                if symbol in self.symbol_data:
-                    self.symbol_data[symbol].Dispose()
-                    del self.symbol_data[symbol]
-                    self.algorithm.Log(f"{self.name}: Removed symbol data for {symbol}")
+                symbol_str = str(security.Symbol)
+                if symbol_str.startswith('/'):
+                    if security.Symbol not in self.symbol_data:
+                        # Track symbol
+                        self.symbol_data[security.Symbol] = self._create_symbol_data(security.Symbol)
+                        self.continuous_contracts.append(security.Symbol)
+                        
+                        # Setup indicators for this single symbol
+                        try:
+                            # Momentum indicators dict
+                            self.momentum_indicators[security.Symbol] = {}
+                            for months in self.momentum_lookbacks:
+                                period = months * 21
+                                indicator_name = f"roc_{months}m"
+                                self.momentum_indicators[security.Symbol][indicator_name] = self.algorithm.ROC(security.Symbol, period)
+                            # Weekly consolidator and std
+                            weekly_consolidator = TradeBarConsolidator(timedelta(weeks=1))
+                            self.algorithm.SubscriptionManager.AddConsolidator(security.Symbol, weekly_consolidator)
+                            weekly_return_indicator = RateOfChange(1)
+                            self.algorithm.RegisterIndicator(security.Symbol, weekly_return_indicator, weekly_consolidator)
+                            volatility_lookback_weeks = 52 * 3
+                            weekly_std_indicator = StandardDeviation(volatility_lookback_weeks)
+                            self.volatility_indicators[security.Symbol] = IndicatorExtensions.Of(weekly_std_indicator, weekly_return_indicator)
+                            self.algorithm.Log(f"{self.name}: Indicators set up for new symbol {symbol_str}")
+                        except Exception as ind_e:
+                            self.algorithm.Error(f"{self.name}: Error setting up indicators for {symbol_str}: {str(ind_e)}")
+                        
+                        self.algorithm.Log(f"{self.name}: Added continuous contract {symbol_str}")
+                else:
+                    self.algorithm.Log(f"{self.name}: Ignoring underlying contract {symbol_str}")
                     
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error in OnSecuritiesChanged: {str(e)}")
+            self.algorithm.Error(f"{self.name}: Error handling securities changes: {str(e)}")
+
+    def debug_volatility_calculation(self):
+        """Debug volatility calculation on first day of month."""
+        try:
+            self.algorithm.Log(f"{self.name}: Monthly volatility debug - "
+                             f"Target: {self.target_volatility:.1%}, "
+                             f"Threshold: {self.momentum_threshold:.3f}")
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error in volatility debug: {str(e)}")

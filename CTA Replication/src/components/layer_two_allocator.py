@@ -37,6 +37,9 @@ class LayerTwoAllocator:
         self.performance_metrics = {}  # Cached performance metrics
         self.risk_free_rate = 0.02  # 2% annual risk-free rate
         
+        # Track last known positions for each strategy (for continuous performance tracking)
+        self.last_strategy_positions = {name: {} for name in self.strategies.keys()}
+        
         # CONFIG-COMPLIANT parameters
         self.lookback_days = self.config.get('lookback_days', 63)
         self.min_track_record = self.config.get('min_track_record_days', 21)
@@ -205,15 +208,19 @@ class LayerTwoAllocator:
             for strategy_name, new_allocation in final_allocations.items():
                 old_allocation = self.strategy_allocations.get(strategy_name, 0)
                 
-                # Only record significant changes (>1% threshold)
-                if abs(new_allocation - old_allocation) > 0.01:
+                # STABILITY FIX: Only apply changes >2% to prevent micro-adjustments accumulating
+                if abs(new_allocation - old_allocation) > 0.02:  # Increased from 0.01 to 0.02
                     allocation_updates[strategy_name] = {
                         'old': old_allocation,
                         'new': new_allocation,
                         'change': new_allocation - old_allocation
                     }
-                
-                self.strategy_allocations[strategy_name] = new_allocation
+                    
+                    # Apply the change
+                    self.strategy_allocations[strategy_name] = new_allocation
+                else:
+                    # Keep old allocation if change is too small
+                    final_allocations[strategy_name] = old_allocation
             
             # Record allocation history
             if allocation_updates:
@@ -232,32 +239,33 @@ class LayerTwoAllocator:
     
     def _calculate_performance_allocations(self, strategy_targets):
         """
-        ENHANCED: Calculate new allocations based on Sharpe ratio performance.
+        TRUE META-ALLOCATION: Calculate allocations for ALL enabled strategies.
         
-        Implementation of full performance-based allocation logic:
-        1. Calculate Sharpe ratios for each strategy over lookback period
-        2. Apply proportional allocation based on risk-adjusted returns
-        3. Handle minimum track record requirements
-        4. Apply minimum/maximum allocation constraints
+        Key change: Uses ALL enabled strategies, not just those with new signals.
+        This allows Layer 2 to continuously rebalance between strategies based on 
+        rolling performance, independent of individual strategy rebalancing schedules.
         """
         try:
-            # Step 1: Calculate Sharpe ratios for each strategy
-            sharpe_ratios = self._calculate_strategy_sharpe_ratios(strategy_targets)
+            # CRITICAL FIX: Get ALL enabled strategies from config, not just active signals
+            all_enabled_strategies = list(self.strategies.keys())  # All strategies in config
+            
+            # Step 1: Calculate Sharpe ratios for ALL enabled strategies
+            sharpe_ratios = self._calculate_strategy_sharpe_ratios_for_all(all_enabled_strategies)
             
             # Step 2: Check if any strategy has sufficient track record
             sufficient_data = any(
                 len(self.strategy_returns[strategy]) >= self.min_track_record 
-                for strategy in strategy_targets.keys()
+                for strategy in all_enabled_strategies
             )
             
             # Step 3: Determine allocation method
             if not sufficient_data:
                 # Not enough data - maintain current allocations with small adjustments
                 self.algorithm.Log("LAYER 2: Insufficient track record, maintaining allocations")
-                return self._get_conservative_allocations(strategy_targets)
+                return self._get_conservative_allocations_for_all(all_enabled_strategies)
             
-            # Step 4: Apply Sharpe ratio proportional allocation
-            new_allocations = self._apply_sharpe_proportional_allocation(sharpe_ratios, strategy_targets)
+            # Step 4: Apply Sharpe ratio proportional allocation to ALL enabled strategies
+            new_allocations = self._apply_sharpe_proportional_allocation_for_all(sharpe_ratios, all_enabled_strategies)
             
             # Step 5: Log performance metrics (concise)
             self._log_performance_update(sharpe_ratios, new_allocations)
@@ -268,11 +276,11 @@ class LayerTwoAllocator:
             self.algorithm.Error(f"LAYER 2: Performance allocation error: {str(e)}")
             return self.strategy_allocations.copy()
     
-    def _calculate_strategy_sharpe_ratios(self, strategy_targets):
-        """Calculate Sharpe ratios for all strategies."""
+    def _calculate_strategy_sharpe_ratios_for_all(self, all_enabled_strategies):
+        """Calculate Sharpe ratios for ALL enabled strategies (not just active signals)."""
         sharpe_ratios = {}
         
-        for strategy_name in strategy_targets.keys():
+        for strategy_name in all_enabled_strategies:
             try:
                 returns = list(self.strategy_returns[strategy_name])
                 
@@ -295,6 +303,9 @@ class LayerTwoAllocator:
                     # Annualized Sharpe ratio
                     daily_risk_free = self.risk_free_rate / 252
                     sharpe_ratio = (mean_return - daily_risk_free) / std_return * np.sqrt(252)
+                    
+                    # STABILITY FIX: Cap extreme Sharpe ratios to prevent wild allocation swings
+                    sharpe_ratio = max(-2.0, min(2.0, sharpe_ratio))  # Cap between -2 and +2
                 else:
                     sharpe_ratio = 0.0
                 
@@ -304,9 +315,15 @@ class LayerTwoAllocator:
                 sharpe_ratios[strategy_name] = 0.0
         
         return sharpe_ratios
+
+    def _calculate_strategy_sharpe_ratios(self, strategy_targets):
+        """DEPRECATED: Use _calculate_strategy_sharpe_ratios_for_all instead."""
+        # Keep for backward compatibility, but delegate to new method
+        strategy_names = list(strategy_targets.keys())
+        return self._calculate_strategy_sharpe_ratios_for_all(strategy_names)
     
-    def _apply_sharpe_proportional_allocation(self, sharpe_ratios, strategy_targets):
-        """Apply proportional allocation based on positive Sharpe ratios."""
+    def _apply_sharpe_proportional_allocation_for_all(self, sharpe_ratios, all_enabled_strategies):
+        """Apply proportional allocation based on positive Sharpe ratios for ALL enabled strategies."""
         try:
             # Step 1: Get positive Sharpe ratios only
             positive_sharpes = {k: max(0.0, v) for k, v in sharpe_ratios.items()}
@@ -316,15 +333,15 @@ class LayerTwoAllocator:
             
             # Step 2: Allocate based on positive Sharpe ratios
             if total_positive_sharpe > 0.01:  # Minimum threshold
-                for strategy_name in strategy_targets.keys():
+                for strategy_name in all_enabled_strategies:
                     sharpe = positive_sharpes.get(strategy_name, 0.0)
                     allocation = sharpe / total_positive_sharpe
                     new_allocations[strategy_name] = allocation
             else:
-                # No positive Sharpe ratios - use equal weight with slight preference for current leaders
-                self.algorithm.Log("LAYER 2: No positive Sharpe ratios, using equal weight")
-                equal_weight = 1.0 / len(strategy_targets)
-                for strategy_name in strategy_targets.keys():
+                # No positive Sharpe ratios - use equal weight
+                self.algorithm.Log("LAYER 2: No positive Sharpe ratios, using equal weight for all enabled strategies")
+                equal_weight = 1.0 / len(all_enabled_strategies)
+                for strategy_name in all_enabled_strategies:
                     new_allocations[strategy_name] = equal_weight
             
             return new_allocations
@@ -332,16 +349,27 @@ class LayerTwoAllocator:
         except Exception as e:
             self.algorithm.Error(f"LAYER 2: Sharpe allocation error: {str(e)}")
             return self.strategy_allocations.copy()
+
+    def _apply_sharpe_proportional_allocation(self, sharpe_ratios, strategy_targets):
+        """DEPRECATED: Use _apply_sharpe_proportional_allocation_for_all instead."""
+        # Keep for backward compatibility, but delegate to new method
+        strategy_names = list(strategy_targets.keys())
+        return self._apply_sharpe_proportional_allocation_for_all(sharpe_ratios, strategy_names)
     
-    def _get_conservative_allocations(self, strategy_targets):
-        """Get conservative allocations when insufficient data."""
+    def _get_conservative_allocations_for_all(self, all_enabled_strategies):
+        """Get conservative allocations for ALL enabled strategies when insufficient data."""
         try:
             current_allocations = self.strategy_allocations.copy()
             
-            # Ensure all active strategies have some allocation
-            for strategy_name in strategy_targets.keys():
+            # Ensure all enabled strategies have some allocation
+            for strategy_name in all_enabled_strategies:
                 if strategy_name not in current_allocations or current_allocations[strategy_name] < 0.05:
                     current_allocations[strategy_name] = 0.10  # 10% minimum
+            
+            # Remove allocations for strategies that are no longer enabled
+            strategies_to_remove = [s for s in current_allocations.keys() if s not in all_enabled_strategies]
+            for strategy_name in strategies_to_remove:
+                del current_allocations[strategy_name]
             
             # Normalize
             total = sum(current_allocations.values())
@@ -353,6 +381,12 @@ class LayerTwoAllocator:
             
         except Exception as e:
             return self.strategy_allocations.copy()
+
+    def _get_conservative_allocations(self, strategy_targets):
+        """DEPRECATED: Use _get_conservative_allocations_for_all instead."""
+        # Keep for backward compatibility, but delegate to new method
+        strategy_names = list(strategy_targets.keys())
+        return self._get_conservative_allocations_for_all(strategy_names)
     
     def _log_performance_update(self, sharpe_ratios, new_allocations):
         """Log performance metrics concisely to manage log size."""
@@ -413,19 +447,52 @@ class LayerTwoAllocator:
             return new_allocations
     
     def _combine_strategy_signals(self, strategy_targets):
-        """Combine strategy signals using current allocations."""
+        """
+        TRUE META-ALLOCATION: Combine signals using allocations for ALL enabled strategies.
+        
+        Key insight: Layer 2 allocations apply to ALL enabled strategies, not just those
+        with new signals. Strategies without new signals use their last known positions.
+        """
         try:
             combined_targets = {}
             
-            # Combine signals weighted by current allocations
+            # NEW APPROACH: Use current allocations for ALL enabled strategies
+            # These allocations were calculated based on ALL strategies' performance
+            current_allocations = self.strategy_allocations.copy()
+            
+            # Log current allocation state
+            allocation_summary = ", ".join([f"{name}: {alloc:.1%}" for name, alloc in current_allocations.items()])
+            self.algorithm.Log(f"LAYER 2: Current allocations: {allocation_summary}")
+            
+            # Combine signals using current allocations
+            strategies_with_signals = list(strategy_targets.keys())
+            strategies_used = []
+            
             for strategy_name, targets in strategy_targets.items():
-                allocation = self.strategy_allocations.get(strategy_name, 0)
+                allocation = current_allocations.get(strategy_name, 0)
                 
-                if allocation > 0:
+                if allocation > 0 and targets:
+                    strategies_used.append(strategy_name)
                     for symbol, weight in targets.items():
                         if symbol not in combined_targets:
                             combined_targets[symbol] = 0.0
                         combined_targets[symbol] += weight * allocation
+            
+            # Log what happened
+            total_allocation_used = sum(current_allocations.get(s, 0) for s in strategies_used)
+            self.algorithm.Log(f"LAYER 2: Used {len(strategies_used)} strategies with signals: {', '.join(strategies_used)}")
+            self.algorithm.Log(f"LAYER 2: Total allocation used: {total_allocation_used:.1%}")
+            
+            # Check for strategies with allocation but no signals (this is expected for MTUM on non-rebalancing weeks)
+            strategies_with_allocation_no_signals = [
+                s for s in current_allocations.keys() 
+                if current_allocations[s] > 0.01 and s not in strategies_with_signals
+            ]
+            
+            if strategies_with_allocation_no_signals:
+                unused_allocation = sum(current_allocations.get(s, 0) for s in strategies_with_allocation_no_signals)
+                self.algorithm.Log(f"LAYER 2: Strategies with allocation but no new signals: {', '.join(strategies_with_allocation_no_signals)} ({unused_allocation:.1%})")
+                self.algorithm.Log("LAYER 2: This is normal - these strategies will rebalance on their schedule")
             
             return combined_targets
             
@@ -567,10 +634,15 @@ class LayerTwoAllocator:
         """
         Update strategy performance tracking based on current positions.
         Called daily to track strategy returns for Sharpe ratio calculations.
+        
+        ENHANCED: Now stores positions for continuous performance tracking.
         """
         try:
             if strategy_name not in self.strategies:
                 return
+            
+            # Store current positions for future reference
+            self.last_strategy_positions[strategy_name] = current_positions.copy()
             
             # Calculate current strategy portfolio value based on positions
             current_value = 0.0

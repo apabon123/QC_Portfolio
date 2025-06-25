@@ -86,6 +86,64 @@ FUTURES_CONFIG = {
         'contract_depth_offset': 0,                         # 0 = front month, 1 = back month
     },
     
+    # TWO-CONTRACT ARCHITECTURE - Configurable contract depth per futures type
+    'contract_depth_config': {
+        # Equity Index Futures (simple term structure, 2 contracts sufficient)
+        'equity_index': {
+            'contracts': ['ES', 'NQ', 'YM', 'RTY'],
+            'depth': 2,  # Front month + Second month
+            'description': 'Equity index futures with simple term structure'
+        },
+        
+        # Energy Futures (moderate term structure, 2-3 contracts)
+        'energy': {
+            'contracts': ['CL', 'NG', 'RB', 'HO'],
+            'depth': 2,  # Front month + Second month
+            'description': 'Energy futures with moderate term structure'
+        },
+        
+        # Precious Metals (simple term structure, 2 contracts)
+        'metals': {
+            'contracts': ['GC', 'SI', 'PL', 'PA'],
+            'depth': 2,  # Front month + Second month
+            'description': 'Precious metals futures with simple term structure'
+        },
+        
+        # Agricultural Futures (seasonal patterns, 3 contracts may be useful)
+        'agricultural': {
+            'contracts': ['ZC', 'ZS', 'ZW', 'ZL', 'ZM'],
+            'depth': 3,  # Front + Second + Third month
+            'description': 'Agricultural futures with seasonal patterns'
+        },
+        
+        # Interest Rate Futures (complex term structure, 2 contracts sufficient for most)
+        'rates': {
+            'contracts': ['ZN', 'ZB', 'ZF', 'ZT'],
+            'depth': 2,  # Front month + Second month
+            'description': 'Interest rate futures with yield curve structure'
+        },
+        
+        # Currency Futures (simple term structure, 2 contracts)
+        'currency': {
+            'contracts': ['6E', '6J', '6B', '6A', '6C', '6S'],
+            'depth': 2,  # Front month + Second month
+            'description': 'Currency futures with simple term structure'
+        },
+        
+        # Volatility Futures (COMPLEX TERM STRUCTURE - needs multiple contracts!)
+        'volatility': {
+            'contracts': ['VX'],
+            'depth': 6,  # Front + 5 additional months for term structure
+            'description': 'Volatility futures with complex contango/backwardation term structure'
+        },
+        
+        # Default configuration for unspecified contracts
+        'default': {
+            'depth': 2,  # Conservative default: front + second month
+            'description': 'Default configuration for unspecified futures contracts'
+        }
+    },
+    
     # Contract Filter Parameters
     'contract_filter': {
         'min_days_out': 0,                                  # Include contracts expiring in 0+ days
@@ -114,9 +172,10 @@ EXECUTION_CONFIG = {
     'max_portfolio_turnover': 2.0,              # 200% maximum daily turnover
     
     # FUTURES ROLLOVER CONFIGURATION - CRITICAL FOR PROPER ROLLOVER HANDLING
-    'rollover_config': {
+    'rollover': {
         'enabled': True,                        # Enable automatic rollover handling
         'rollover_method': 'OnSymbolChangedEvents',  # Use QuantConnect's built-in system
+        'immediate_reopen': True,               # KEY: Force immediate reopen - NO MARKET GAPS
         'order_type': 'market',                 # Market orders for rollovers (immediate execution)
         'max_rollover_slippage': 0.001,         # 0.1% maximum acceptable slippage
         'emergency_liquidation': True,          # Liquidate if rollover fails
@@ -125,7 +184,11 @@ EXECUTION_CONFIG = {
         'retry_attempts': 3,                    # Number of retry attempts for failed rollovers
         'retry_delay_seconds': 5,               # Delay between retry attempts
         'log_rollover_events': True,            # Log all rollover events for debugging
+        'log_rollover_details': True,           # Log detailed rollover execution
+        'log_rollover_prices': True,            # Log rollover contract prices
         'validate_rollover_contracts': True,    # Validate new contracts before trading
+        'fallback_to_rebalance': False,         # KEY: Don't wait for rebalance - execute immediately
+        'max_rollover_history': 100,            # Maximum rollover events to track
     },
     
     # FUTURES-SPECIFIC EXECUTION PARAMETERS
@@ -180,13 +243,15 @@ MONITORING_CONFIG = {
     'strategy_logging': "detailed",            # Detailed strategy logging
     'execution_logging': "summary",            # Summary execution logging
     'risk_logging': "detailed",                # Detailed risk logging
-    'rollover_logging': "detailed",            # Detailed rollover logging
+            'rollover_logging': "summary",             # Summary rollover logging (not detailed)
     
     # Reporting
     'daily_reports': True,                     # Generate daily performance reports
     'weekly_reports': True,                    # Generate weekly allocation reports
     'monthly_reports': True,                   # Generate monthly risk reports
     'rollover_reports': True,                  # Generate rollover analysis reports
+    'skip_reports_during_warmup': True,        # Skip monthly reports during warmup to reduce log noise
+    'warmup_progress_frequency_days': 90,      # Log warmup progress every N days (0 = never)
 }
 
 # =============================================================================

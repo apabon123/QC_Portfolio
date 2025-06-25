@@ -326,42 +326,64 @@ class ThreeLayerOrchestrator:
             # Get current slice for futures chain access
             current_slice = getattr(self, '_current_slice', None)
             
-            # Log strategy availability status
+            # ENHANCED: Track availability with detailed logging
             available_count = 0
+            unavailable_strategies = []
+            
             for strategy_name, strategy in loaded_strategies.items():
                 if hasattr(strategy, 'IsAvailable'):
                     is_available = strategy.IsAvailable
-                    status = "AVAILABLE" if is_available else "NOT_AVAILABLE"
                     if is_available:
                         available_count += 1
+                        status = "AVAILABLE"
+                    else:
+                        unavailable_strategies.append(strategy_name)
+                        status = "NOT_AVAILABLE"
+                        # Log WHY it's not available (compact format)
+                        if hasattr(strategy, 'log_availability_status'):
+                            strategy.log_availability_status()
+                        elif hasattr(strategy, '_last_unavailable_reason'):
+                            reason = getattr(strategy, '_last_unavailable_reason', 'Unknown')
+                            self.algorithm.Log(f"LAYER 1: {strategy_name} - NOT_AVAILABLE: {reason}")
                 else:
                     status = "NO_AVAILABILITY_CHECK"
                     available_count += 1  # Assume available if no check
                 
                 self.algorithm.Log(f"LAYER 1: {strategy_name} - {status}")
             
-            self.algorithm.Log(f"LAYER 1: Generating signals from {available_count}/{len(loaded_strategies)} available strategies")
+            # Log summary with unavailable details
+            if unavailable_strategies:
+                self.algorithm.Log(f"LAYER 1: {available_count}/{len(loaded_strategies)} available. Unavailable: {', '.join(unavailable_strategies)}")
+            else:
+                self.algorithm.Log(f"LAYER 1: All {available_count}/{len(loaded_strategies)} strategies available")
             
+            # ENHANCED: Generate signals with availability-aware error handling
             for strategy_name, strategy in loaded_strategies.items():
                 try:
-                    # ENHANCED: Check strategy availability before generating targets
-                    if hasattr(strategy, 'IsAvailable') and not strategy.IsAvailable:
-                        self.algorithm.Log(f"LAYER 1: {strategy_name} not available - skipping signal generation")
-                        continue
+                    # Check strategy availability before generating targets
+                    if hasattr(strategy, 'IsAvailable'):
+                        is_available = strategy.IsAvailable
+                        if not is_available:
+                            self.algorithm.Log(f"LAYER 1: {strategy_name} skipped - not available")
+                            # CRITICAL: Don't continue - allow Layer 2 to handle missing strategies
+                            continue
                     
                     # CRITICAL: Pass slice to strategies for futures chain access
                     if hasattr(strategy, 'generate_targets'):
                         targets = strategy.generate_targets(current_slice)
                         if targets:
                             strategy_targets[strategy_name] = targets
-                            self.algorithm.Log(f"LAYER 1: {strategy_name} generated {len(targets)} targets")
+                            # Format symbol names for readable logging
+                            symbol_names = [str(symbol) for symbol in targets.keys()]
+                            self.algorithm.Log(f"LAYER 1: {strategy_name} generated {len(targets)} targets: {symbol_names}")
                         else:
                             self.algorithm.Log(f"LAYER 1: {strategy_name} generated no targets")
                     elif hasattr(strategy, 'get_target_weights'):
                         targets = strategy.get_target_weights(current_slice)
                         if targets:
                             strategy_targets[strategy_name] = targets
-                            self.algorithm.Log(f"LAYER 1: {strategy_name} generated {len(targets)} targets")
+                            symbol_names = [str(symbol) for symbol in targets.keys()]
+                            self.algorithm.Log(f"LAYER 1: {strategy_name} generated {len(targets)} targets: {symbol_names}")
                         else:
                             self.algorithm.Log(f"LAYER 1: {strategy_name} generated no targets")
                     else:
@@ -369,10 +391,14 @@ class ThreeLayerOrchestrator:
                         
                 except Exception as e:
                     self.algorithm.Log(f"LAYER 1: {strategy_name} signal generation error: {str(e)}")
+                    # Don't log full traceback to save log space - only for critical errors
+                    if "Symbol" in str(e) or "clr.MetaClass" in str(e):
+                        import traceback
+                        self.algorithm.Error(f"LAYER 1: {strategy_name} critical error: {traceback.format_exc()}")
                     continue
             
             total_signals = sum(len(targets) for targets in strategy_targets.values())
-            self.algorithm.Log(f"LAYER 1: Generated {total_signals} total signals from {len(strategy_targets)} strategies")
+            self.algorithm.Log(f"LAYER 1: Generated {total_signals} total signals from {len(strategy_targets)}/{len(loaded_strategies)} strategies")
             
             return strategy_targets
             
@@ -409,6 +435,13 @@ class ThreeLayerOrchestrator:
                         update_summary.append(f"{strategy}: {change:+.1%}")
                     self.algorithm.Log(f"LAYER 2: Allocation updates: {', '.join(update_summary)}")
                 
+                # Update strategy allocation chart with active allocations
+                if hasattr(self.algorithm, '_update_strategy_allocation_chart'):
+                    # Get the actual allocations used for combining (which are normalized)
+                    active_allocations = self._get_active_strategy_allocations(strategy_targets)
+                    if active_allocations:
+                        self.algorithm._update_strategy_allocation_chart(active_allocations)
+                
                 gross_exposure = sum(abs(w) for w in combined_targets.values())
                 net_exposure = sum(combined_targets.values())
                 
@@ -423,7 +456,36 @@ class ThreeLayerOrchestrator:
         except Exception as e:
             self.algorithm.Error(f"LAYER 2: Execution error: {str(e)}")
             return {}
-    
+
+    def _get_active_strategy_allocations(self, strategy_targets):
+        """Get normalized allocations for only the strategies that provided targets."""
+        try:
+            if not strategy_targets or not self.allocator:
+                return {}
+            
+            # Get allocations for active strategies only
+            active_strategies = list(strategy_targets.keys())
+            active_allocations = {}
+            
+            for strategy_name in active_strategies:
+                active_allocations[strategy_name] = self.allocator.strategy_allocations.get(strategy_name, 0)
+            
+            # Normalize to sum to 100%
+            total_allocation = sum(active_allocations.values())
+            if total_allocation > 0:
+                for strategy_name in active_allocations:
+                    active_allocations[strategy_name] /= total_allocation
+            else:
+                # Equal weight fallback
+                equal_weight = 1.0 / len(active_strategies) if active_strategies else 0
+                active_allocations = {name: equal_weight for name in active_strategies}
+            
+            return active_allocations
+            
+        except Exception as e:
+            self.algorithm.Error(f"ORCHESTRATOR: Error getting active allocations: {str(e)}")
+            return {}
+
     def _execute_layer2_monthly_rebalance(self, strategy_targets):
         """Execute Layer 2 monthly: Update allocations then combine."""
         try:
@@ -449,6 +511,13 @@ class ThreeLayerOrchestrator:
                         change = update['change']
                         self.algorithm.Log(f"  {strategy}: {old_alloc:.1%} → {new_alloc:.1%} ({change:+.1%})")
                 
+                # Update strategy allocation chart with active allocations
+                if hasattr(self.algorithm, '_update_strategy_allocation_chart'):
+                    # Get the actual allocations used for combining (which are normalized)
+                    active_allocations = self._get_active_strategy_allocations(strategy_targets)
+                    if active_allocations:
+                        self.algorithm._update_strategy_allocation_chart(active_allocations)
+                
                 gross_exposure = sum(abs(w) for w in combined_targets.values())
                 net_exposure = sum(combined_targets.values())
                 
@@ -465,15 +534,35 @@ class ThreeLayerOrchestrator:
             return self._execute_layer2_rebalance(strategy_targets)  # Fallback
     
     def _update_strategy_performance_tracking(self, strategy_targets):
-        """Update strategy performance tracking for LAYER 2 Sharpe ratio calculations."""
+        """
+        Update strategy performance tracking for ALL enabled strategies.
+        
+        CRITICAL: Layer 2 needs performance data for ALL strategies to calculate
+        proper allocations, not just strategies that provided new signals.
+        """
         try:
             if not self.allocator or not hasattr(self.allocator, 'update_strategy_performance'):
                 return
             
-            # Update performance tracking for each strategy
+            # Get ALL enabled strategies from the allocator
+            all_enabled_strategies = list(self.allocator.strategies.keys())
+            
+            # Update performance for strategies that provided new signals
             for strategy_name, targets in strategy_targets.items():
                 if targets:  # Only update if strategy has active targets
                     self.allocator.update_strategy_performance(strategy_name, targets)
+            
+            # For strategies that didn't provide new signals, we need their current positions
+            # This is crucial for proper performance tracking during non-rebalancing periods
+            strategies_without_signals = [s for s in all_enabled_strategies if s not in strategy_targets.keys()]
+            
+            if strategies_without_signals:
+                # Get current positions for strategies that didn't rebalance
+                for strategy_name in strategies_without_signals:
+                    # Use their last known targets/positions for performance tracking
+                    if hasattr(self.allocator, 'last_strategy_positions') and strategy_name in self.allocator.last_strategy_positions:
+                        last_positions = self.allocator.last_strategy_positions[strategy_name]
+                        self.allocator.update_strategy_performance(strategy_name, last_positions)
             
         except Exception as e:
             # Silent error handling to avoid log spam
@@ -639,14 +728,19 @@ class ThreeLayerOrchestrator:
             if not liquid_symbols:
                 return
             
-            # Pass liquid symbols to all components
-            if self.strategy_loader:
-                self.strategy_loader.update_strategies(slice, liquid_symbols)
+            # Update strategies directly through their objects
+            if self.strategy_loader and hasattr(self.strategy_loader, 'strategy_objects'):
+                for strategy_name, strategy in self.strategy_loader.strategy_objects.items():
+                    if hasattr(strategy, 'update_with_data'):
+                        try:
+                            strategy.update_with_data(slice)
+                        except Exception as e:
+                            self.algorithm.Error(f"ORCHESTRATOR: Error updating {strategy_name}: {str(e)}")
             
-            if self.allocator:
+            if self.allocator and hasattr(self.allocator, 'update_market_data'):
                 self.allocator.update_market_data(slice, liquid_symbols)
             
-            if self.risk_manager:
+            if self.risk_manager and hasattr(self.risk_manager, 'update_market_data'):
                 self.risk_manager.update_market_data(slice, liquid_symbols)
             
         except Exception as e:
@@ -681,13 +775,19 @@ class ThreeLayerOrchestrator:
                 return
             
             # Update all components with unified data
-            if self.strategy_loader:
-                # Pass unified data to strategy loader
-                if hasattr(self.strategy_loader, 'update_strategies_with_unified_data'):
-                    self.strategy_loader.update_strategies_with_unified_data(unified_data, liquid_symbols)
-                else:
-                    # Fallback to traditional method
-                    self.strategy_loader.update_strategies(slice, liquid_symbols)
+            if self.strategy_loader and hasattr(self.strategy_loader, 'strategy_objects'):
+                # Update strategies directly
+                for strategy_name, strategy in self.strategy_loader.strategy_objects.items():
+                    if hasattr(strategy, 'update_with_unified_data'):
+                        try:
+                            strategy.update_with_unified_data(unified_data, liquid_symbols)
+                        except Exception as e:
+                            self.algorithm.Error(f"ORCHESTRATOR: Error updating {strategy_name} with unified data: {str(e)}")
+                    elif hasattr(strategy, 'update_with_data'):
+                        try:
+                            strategy.update_with_data(slice)
+                        except Exception as e:
+                            self.algorithm.Error(f"ORCHESTRATOR: Error updating {strategy_name}: {str(e)}")
             
             if self.allocator:
                 # Pass unified data to allocator
@@ -744,25 +844,33 @@ class ThreeLayerOrchestrator:
             return {}
 
     def _get_liquid_symbols(self, slice):
-        """Get liquid symbols from slice data (legacy method)."""
+        """Get liquid symbols using centralized data validator."""
         try:
             liquid_symbols = []
             
-            # Use bars and futures chains to determine liquidity
-            if hasattr(slice, 'Bars'):
-                for symbol in slice.Bars.Keys:
-                    if symbol in self.algorithm.Securities:
-                        security = self.algorithm.Securities[symbol]
-                        if security.HasData and security.IsTradable:
-                            liquid_symbols.append(symbol)
+            # Use centralized validator for all symbols
+            symbols_to_check = []
             
-            # Add symbols from futures chains if available
+            # Get symbols from bars
+            if hasattr(slice, 'Bars'):
+                symbols_to_check.extend(slice.Bars.Keys)
+            
+            # Get symbols from futures chains
             if hasattr(slice, 'FuturesChains'):
                 for symbol in slice.FuturesChains.Keys:
-                    if symbol not in liquid_symbols:
-                        chain = slice.FuturesChains[symbol]
-                        if chain and len(chain) > 0:
-                            liquid_symbols.append(symbol)
+                    if symbol not in symbols_to_check:
+                        symbols_to_check.append(symbol)
+            
+            # Use centralized validator for each symbol with slice data
+            for symbol in symbols_to_check:
+                if hasattr(self.algorithm, 'data_validator'):
+                    validation_result = self.algorithm.data_validator.validate_symbol_for_trading(symbol, slice)
+                    
+                    if validation_result['is_valid']:
+                        liquid_symbols.append(symbol)
+                else:
+                    # No fallback - require centralized validator for consistency
+                    self.algorithm.Error("ORCHESTRATOR: CentralizedDataValidator not available - cannot validate symbols")
             
             return liquid_symbols
             

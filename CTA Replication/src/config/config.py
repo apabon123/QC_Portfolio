@@ -22,17 +22,16 @@ try:
     # Try relative imports first (QuantConnect cloud)
     from .config_market_strategy import (
         ALGORITHM_CONFIG,
-        ASSET_CATEGORIES,
-        STRATEGY_ASSET_FILTERS,
+        FUTURES_TIERS,
         STRATEGY_CONFIGS,
         ALLOCATION_CONFIG,
         RISK_CONFIG,
         UNIVERSE_CONFIG,
-        SYSTEM_CONFIG,
-        FUTURES_CHAIN_CONFIG,
-        get_strategy_allowed_symbols,
+        LOGGING_CONFIG,
+        get_active_futures,
+        get_futures_by_category,
         get_enabled_strategies,
-        get_strategy_modules
+        add_future_to_tier
     )
     
     from .config_execution_plumbing import (
@@ -49,17 +48,16 @@ except ImportError:
     # Fallback to direct imports (local development)
     from config_market_strategy import (
         ALGORITHM_CONFIG,
-        ASSET_CATEGORIES,
-        STRATEGY_ASSET_FILTERS,
+        FUTURES_TIERS,
         STRATEGY_CONFIGS,
         ALLOCATION_CONFIG,
         RISK_CONFIG,
         UNIVERSE_CONFIG,
-        SYSTEM_CONFIG,
-        FUTURES_CHAIN_CONFIG,
-        get_strategy_allowed_symbols,
+        LOGGING_CONFIG,
+        get_active_futures,
+        get_futures_by_category,
         get_enabled_strategies,
-        get_strategy_modules
+        add_future_to_tier
     )
     
     from config_execution_plumbing import (
@@ -74,6 +72,45 @@ except ImportError:
     )
 
 # =============================================================================
+# BACKWARD COMPATIBILITY HELPERS
+# =============================================================================
+def _generate_asset_categories_from_tiers():
+    """Generate old asset categories structure from new tiers for backward compatibility."""
+    categories = {}
+    
+    # Generate priority-based categories
+    for tier_name, tier_futures in FUTURES_TIERS.items():
+        priority_num = {'tier_1': 1, 'tier_2': 2, 'tier_3': 3}.get(tier_name, 3)
+        priority_key = f'futures_priority_{priority_num}'
+        categories[priority_key] = list(tier_futures.keys())
+    
+    # Generate category-based groupings
+    by_category = get_futures_by_category()
+    for category, symbols in by_category.items():
+        categories[f'futures_{category}'] = symbols
+    
+    return categories
+
+def _generate_strategy_filters_from_tiers():
+    """Generate strategy asset filters from tiers for backward compatibility."""
+    active_futures = get_active_futures()
+    
+    return {
+        'MTUM_CTA': {
+            'allowed_categories': ['futures_priority_1', 'futures_priority_2'],
+            'excluded_categories': [],
+            'excluded_symbols': ['6J'],
+            'reason': 'Clean tier-based filtering'
+        },
+        'KestnerCTA': {
+            'allowed_categories': ['futures_priority_1', 'futures_priority_2'],
+            'excluded_categories': [],
+            'excluded_symbols': [],
+            'reason': 'Clean tier-based filtering'
+        }
+    }
+
+# =============================================================================
 # MASTER CONFIGURATION ASSEMBLY
 # =============================================================================
 def get_full_config():
@@ -84,11 +121,9 @@ def get_full_config():
         dict: Complete configuration for the three-layer system
     """
     return {
-        # Market and Strategy Configuration
+        # Market and Strategy Configuration (Clean Structure)
         'algorithm': ALGORITHM_CONFIG,
-        'system': SYSTEM_CONFIG,
-        'asset_categories': ASSET_CATEGORIES,
-        'strategy_asset_filters': STRATEGY_ASSET_FILTERS,
+        'futures_tiers': FUTURES_TIERS,
         'strategies': STRATEGY_CONFIGS,
         'strategy_allocation': ALLOCATION_CONFIG,
         'portfolio_risk': RISK_CONFIG,
@@ -96,7 +131,7 @@ def get_full_config():
             **UNIVERSE_CONFIG,
             'futures_config': FUTURES_CONFIG  # Add technical futures config
         },
-        'futures_chain': FUTURES_CHAIN_CONFIG,  # NEW: Futures chain configuration
+        'logging': LOGGING_CONFIG,
         
         # Execution and Plumbing Configuration
         'qc_native': QC_NATIVE_CONFIG,
@@ -106,7 +141,16 @@ def get_full_config():
         },
         'monitoring': MONITORING_CONFIG,
         'constraints': CONSTRAINTS_CONFIG,
-        'continuous_contracts': CONTINUOUS_CONTRACTS_CONFIG
+        'continuous_contracts': CONTINUOUS_CONTRACTS_CONFIG,
+        
+        # Backward compatibility fields (generate from new structure)
+        'system': {
+            'name': "Three-Layer CTA Portfolio System",
+            'version': "3.0",
+            'description': "Clean tier-based configuration system",
+        },
+        'asset_categories': _generate_asset_categories_from_tiers(),
+        'strategy_asset_filters': _generate_strategy_filters_from_tiers(),
     }
 
 # =============================================================================

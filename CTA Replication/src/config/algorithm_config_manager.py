@@ -1073,20 +1073,31 @@ class AlgorithmConfigManager:
                 strategy_requirement = strategy_requirements.get(strategy_name, 0)
                 max_days = max(max_days, strategy_requirement)
                 
-                # Also check strategy-specific warmup config
+                # Check strategy-specific warmup config
                 strategy_config = self.get_strategy_config(strategy_name)
                 strategy_warmup = strategy_config.get('warmup_config', {})
                 strategy_days = strategy_warmup.get('required_days', 0)
                 max_days = max(max_days, strategy_days)
+                
+                # CRITICAL FIX: Check for direct 'warmup_days' field in strategy config
+                # This is where MTUM_CTA specifies its 756 days requirement
+                direct_warmup_days = strategy_config.get('warmup_days', 0)
+                if direct_warmup_days > 0:
+                    max_days = max(max_days, direct_warmup_days)
+                    self.algorithm.Log(f"CONFIG: Strategy {strategy_name} requires {direct_warmup_days} warmup days")
             
             # Apply buffer multiplier
             buffer_multiplier = warmup_config.get('buffer_multiplier', 1.2)
             final_days = int(max_days * buffer_multiplier)
             
-            self.algorithm.Log(f"CONFIG MANAGER: Calculated warmup period: {final_days} days")
-            self.algorithm.Log(f"  - Base requirements: {max_days} days")
-            self.algorithm.Log(f"  - Buffer multiplier: {buffer_multiplier}")
-            self.algorithm.Log(f"  - Enabled strategies: {list(enabled_strategies.keys())}")
+            # Only log during warmup setup, not every call (to reduce log noise)
+            should_log = not hasattr(self.algorithm, '_warmup_calculation_logged')
+            if should_log:
+                self.algorithm.Log(f"CONFIG MANAGER: Calculated warmup period: {final_days} days")
+                self.algorithm.Log(f"  - Base requirements: {max_days} days")
+                self.algorithm.Log(f"  - Buffer multiplier: {buffer_multiplier}")
+                self.algorithm.Log(f"  - Enabled strategies: {list(enabled_strategies.keys())}")
+                self.algorithm._warmup_calculation_logged = True
             
             return final_days
             

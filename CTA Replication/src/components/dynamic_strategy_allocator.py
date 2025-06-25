@@ -15,19 +15,9 @@ class DynamicStrategyAllocator:
     """
     
     def __init__(self, algorithm, config=None):
+        """Initialize dynamic strategy allocator with enhanced availability handling."""
         self.algorithm = algorithm
-        
-        # Default configuration
-        self.config = {
-            'lookback_days': 63,              # 3 months for Sharpe calculation
-            'min_track_record_days': 21,      # Minimum days before changing allocations
-            'rebalance_frequency': 'weekly',  # How often to update allocations
-            'allocation_smoothing': 0.7,      # Smoothing factor (0.7 = 70% old, 30% new)
-            'use_correlation': True,          # Use correlation in portfolio vol calculation
-        }
-        
-        if config:
-            self.config.update(config)
+        self.config = config or {}
         
         # Strategy tracking
         self.strategies = {}
@@ -35,7 +25,19 @@ class DynamicStrategyAllocator:
         self.current_allocations = {}
         self.last_allocation_update = None
         
-        self.algorithm.Log(f"Layer2 Allocator: Initialized with config: {self.config}")
+        # Enhanced availability tracking
+        self.availability_config = self.config.get('availability_handling', {})
+        self.unavailable_days_counter = {}  # Track consecutive unavailable days
+        self.last_availability_check = None
+        
+        # Default availability handling settings
+        self.availability_mode = self.availability_config.get('mode', 'persistence')
+        self.persistence_threshold = self.availability_config.get('persistence_threshold', 0.1)
+        self.emergency_ratio = self.availability_config.get('emergency_reallocation_ratio', 0.5)
+        self.log_reasons = self.availability_config.get('log_unavailable_reasons', True)
+        self.max_unavailable_days = self.availability_config.get('max_consecutive_unavailable_days', 7)
+        
+        algorithm.Log(f"Layer2: Initialized with availability mode: {self.availability_mode}")
     
     def register_strategy(self, strategy_name, strategy_instance, initial_allocation=None):
         """
@@ -119,50 +121,116 @@ class DynamicStrategyAllocator:
     def calculate_optimal_allocations(self):
         """
         Calculate optimal allocations using simple Sharpe ratio proportional method
-        ENHANCED: Only allocate to available strategies
+        ENHANCED: Allocation persistence for unavailable strategies
         
         Returns:
             dict: New allocation weights for each strategy
         """
-        # STEP 1: Filter to only available strategies
+        # STEP 1: Identify available vs unavailable strategies
         available_strategies = {}
+        unavailable_strategies = {}
+        
         for strategy_name, strategy in self.strategies.items():
             if hasattr(strategy, 'IsAvailable') and strategy.IsAvailable:
                 available_strategies[strategy_name] = strategy
             else:
-                self.algorithm.Log(f"ALLOCATOR: Strategy {strategy_name} not available for allocation")
+                unavailable_strategies[strategy_name] = strategy
         
+        # Track availability for alerting
+        self._track_strategy_availability(available_strategies.keys(), unavailable_strategies.keys())
+        
+        # STEP 2: Allocation persistence logic based on configuration
         if not available_strategies:
-            self.algorithm.Log("ALLOCATOR: No strategies available - returning zero allocations")
-            return {strategy: 0.0 for strategy in self.strategies.keys()}
+            if self.availability_mode == 'persistence':
+                self.algorithm.Log("ALLOCATOR: No strategies available - maintaining current allocations")
+                return self.current_allocations.copy()  # Keep current allocations unchanged
+            else:
+                self.algorithm.Log("ALLOCATOR: No strategies available - returning zero allocations")
+                return {strategy: 0.0 for strategy in self.strategies.keys()}
         
-        # STEP 2: Calculate Sharpe ratios only for available strategies
+        # STEP 3: Calculate new allocations only for available strategies
         sharpe_ratios = self.calculate_sharpe_ratios()
         available_sharpes = {k: v for k, v in sharpe_ratios.items() if k in available_strategies}
         
-        # STEP 3: Allocate only among available strategies
-        positive_sharpes = {k: max(0, v) for k, v in available_sharpes.items()}
-        total_positive_sharpe = sum(positive_sharpes.values())
-        
-        # Initialize all allocations to zero
-        new_allocations = {strategy: 0.0 for strategy in self.strategies.keys()}
-        
-        if total_positive_sharpe > 0:
-            # Allocate proportionally to positive Sharpe ratios (available strategies only)
-            for strategy, sharpe in positive_sharpes.items():
-                new_allocations[strategy] = sharpe / total_positive_sharpe
-        else:
-            # If no positive Sharpes, use equal weight among available strategies
-            n_available = len(available_strategies)
-            if n_available > 0:
-                equal_weight = 1.0 / n_available
+        # STEP 4: Determine allocation approach based on configuration and unavailable strategies
+        if unavailable_strategies and self.availability_mode == 'persistence':
+            # PERSISTENCE MODE: Some strategies unavailable
+            # Keep allocations for unavailable strategies, reallocate only available portion
+            
+            # Calculate current allocation to unavailable strategies
+            unavailable_allocation = sum(self.current_allocations.get(name, 0.0) 
+                                       for name in unavailable_strategies.keys())
+            available_allocation = 1.0 - unavailable_allocation
+            
+            # Ensure we have allocation space for available strategies using config threshold
+            if available_allocation <= self.persistence_threshold:
+                # Emergency reallocation using configured ratio
+                unavailable_allocation = self.emergency_ratio
+                available_allocation = 1.0 - self.emergency_ratio
+                
+                self.algorithm.Log(f"ALLOCATOR: Emergency reallocation - {len(unavailable_strategies)} unavailable strategies scaled to {unavailable_allocation:.1%}")
+            
+            # Allocate among available strategies using their portion
+            positive_sharpes = {k: max(0, v) for k, v in available_sharpes.items()}
+            total_positive_sharpe = sum(positive_sharpes.values())
+            
+            new_allocations = {}
+            
+            # Maintain allocations for unavailable strategies (scaled if needed)
+            if unavailable_allocation > 0:
+                current_unavailable_total = sum(self.current_allocations.get(name, 0.0) 
+                                              for name in unavailable_strategies.keys())
+                if current_unavailable_total > 0:
+                    unavailable_scale = unavailable_allocation / current_unavailable_total
+                    for name in unavailable_strategies.keys():
+                        new_allocations[name] = self.current_allocations.get(name, 0.0) * unavailable_scale
+                else:
+                    # Equal weight among unavailable if no current allocation
+                    equal_weight = unavailable_allocation / len(unavailable_strategies)
+                    for name in unavailable_strategies.keys():
+                        new_allocations[name] = equal_weight
+            else:
+                for name in unavailable_strategies.keys():
+                    new_allocations[name] = 0.0
+            
+            # Allocate remaining portion among available strategies
+            if total_positive_sharpe > 0:
+                for strategy, sharpe in positive_sharpes.items():
+                    allocation = (sharpe / total_positive_sharpe) * available_allocation
+                    new_allocations[strategy] = allocation
+            else:
+                # Equal weight among available strategies
+                equal_weight = available_allocation / len(available_strategies)
                 for strategy in available_strategies.keys():
                     new_allocations[strategy] = equal_weight
-        
-        # Log allocation decisions
-        available_count = len(available_strategies)
-        total_count = len(self.strategies)
-        self.algorithm.Log(f"ALLOCATOR: Allocated to {available_count}/{total_count} available strategies")
+            
+            # Log persistence decision
+            self.algorithm.Log(f"ALLOCATOR: Persistence mode - {len(available_strategies)} available ({available_allocation:.1%}), {len(unavailable_strategies)} unavailable ({unavailable_allocation:.1%})")
+            
+        else:
+            # NORMAL MODE: All strategies available OR reallocate mode
+            # Zero out unavailable strategies and reallocate everything to available ones
+            positive_sharpes = {k: max(0, v) for k, v in available_sharpes.items()}
+            total_positive_sharpe = sum(positive_sharpes.values())
+            
+            new_allocations = {}
+            
+            # Zero allocation for unavailable strategies
+            for name in unavailable_strategies.keys():
+                new_allocations[name] = 0.0
+            
+            if total_positive_sharpe > 0:
+                # Allocate proportionally to positive Sharpe ratios
+                for strategy, sharpe in positive_sharpes.items():
+                    new_allocations[strategy] = sharpe / total_positive_sharpe
+            else:
+                # Equal weight if no positive Sharpes
+                equal_weight = 1.0 / len(available_strategies)
+                for strategy in available_strategies.keys():
+                    new_allocations[strategy] = equal_weight
+            
+            if unavailable_strategies:
+                self.algorithm.Log(f"ALLOCATOR: Reallocate mode - {len(available_strategies)} available (100%), {len(unavailable_strategies)} unavailable (0%)")
         
         return new_allocations
     
@@ -220,6 +288,7 @@ class DynamicStrategyAllocator:
     def combine_strategy_targets(self, strategy_targets):
         """
         Combine strategy targets using current allocations
+        ENHANCED: Only combine targets from strategies that provided signals
         
         Args:
             strategy_targets (dict): {strategy_name: {symbol: weight}}
@@ -229,15 +298,43 @@ class DynamicStrategyAllocator:
         """
         combined_targets = {}
         
-        for strategy_name, targets in strategy_targets.items():
+        # STEP 1: Identify which strategies provided targets
+        active_strategies = set(strategy_targets.keys())
+        all_strategies = set(self.current_allocations.keys())
+        inactive_strategies = all_strategies - active_strategies
+        
+        # STEP 2: Calculate effective allocations (normalize among active strategies only)
+        active_allocations = {}
+        total_active_allocation = 0.0
+        
+        for strategy_name in active_strategies:
             allocation = self.current_allocations.get(strategy_name, 0.0)
+            active_allocations[strategy_name] = allocation
+            total_active_allocation += allocation
+        
+        # STEP 3: Normalize allocations among active strategies
+        if total_active_allocation > 0:
+            for strategy_name in active_allocations:
+                active_allocations[strategy_name] /= total_active_allocation
+        else:
+            # Equal weight fallback
+            equal_weight = 1.0 / len(active_strategies) if active_strategies else 0
+            active_allocations = {name: equal_weight for name in active_strategies}
+        
+        # STEP 4: Combine targets using normalized allocations
+        for strategy_name, targets in strategy_targets.items():
+            allocation = active_allocations.get(strategy_name, 0.0)
             
             for symbol, weight in targets.items():
                 if symbol not in combined_targets:
                     combined_targets[symbol] = 0.0
                 
-                # Apply allocation to strategy weight
+                # Apply normalized allocation to strategy weight
                 combined_targets[symbol] += weight * allocation
+        
+        # STEP 5: Log combination summary
+        if inactive_strategies:
+            self.algorithm.Log(f"ALLOCATOR: Combined {len(active_strategies)} active strategies (inactive: {', '.join(inactive_strategies)})")
         
         return combined_targets
     
@@ -256,4 +353,30 @@ class DynamicStrategyAllocator:
                           f"(Δ{change:+.1%}, Sharpe: {sharpe:.2f})")
         
         self.algorithm.Log(f"Layer2: Updated allocations - {', '.join(changes)}")
+
+    def _track_strategy_availability(self, available_strategies, unavailable_strategies):
+        """Track consecutive unavailable days and generate alerts."""
+        current_date = self.algorithm.Time.date()
+        
+        # Update counters
+        for strategy_name in available_strategies:
+            if strategy_name in self.unavailable_days_counter:
+                # Strategy became available again
+                days_unavailable = self.unavailable_days_counter[strategy_name]
+                if days_unavailable > 0:
+                    self.algorithm.Log(f"ALLOCATOR: {strategy_name} available again after {days_unavailable} days")
+                del self.unavailable_days_counter[strategy_name]
+        
+        for strategy_name in unavailable_strategies:
+            if strategy_name not in self.unavailable_days_counter:
+                self.unavailable_days_counter[strategy_name] = 1
+            else:
+                self.unavailable_days_counter[strategy_name] += 1
+            
+            # Alert for extended unavailability
+            days_unavailable = self.unavailable_days_counter[strategy_name]
+            if days_unavailable == self.max_unavailable_days:
+                self.algorithm.Log(f"ALERT: {strategy_name} unavailable for {days_unavailable} consecutive days")
+        
+        self.last_availability_check = current_date
 

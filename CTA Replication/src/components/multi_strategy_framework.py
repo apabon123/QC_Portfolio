@@ -71,8 +71,8 @@ class MultiStrategyFuturesAlgorithm(QCAlgorithm):
         self.strategies = {}
         self._initialize_strategies()
 
-        # 4) Basic warmup (will be overridden by config in main.py)
-        self.SetWarmUp(timedelta(days=80), Resolution.Daily)
+        # 4) Warmup will be configured by main.py using strategy-specific requirements
+        # Do not set warmup here - let main.py handle it with proper strategy requirements
 
         # 5) Schedule basic rebalancing and monitoring
         self._setup_basic_scheduling()

@@ -1,92 +1,141 @@
 # LEAN Integration Guide for CTA Framework
 
-> **🚨 MANDATORY: Check LEAN capabilities before implementing ANY custom solutions**
+> **🎯 PRAGMATIC APPROACH: Use the right tool for the right job**
 
 ---
 
-## 🎯 **LEAN-FIRST DEVELOPMENT WORKFLOW**
+## 🎯 **SMART INTEGRATION PHILOSOPHY**
 
-### **Before Writing ANY Code:**
+### **Use LEAN For What It's Good At:**
+- **📊 Data Access**: Market data, historical data, real-time feeds
+- **📈 Basic Indicators**: SMA, EMA, RSI, ROC, STD, ATR, MACD
+- **🏗️ Trading Infrastructure**: Order execution, portfolio tracking, universe management
+- **⏰ Scheduling**: Market hours, rebalancing timing, event handling
 
-1. **🔍 CHECK**: `docs/lean-cheatsheet.md` for existing LEAN methods
-2. **📚 VERIFY**: [LEAN API Documentation](https://www.lean.io/docs/v2/lean-engine/class-reference)
-3. **❓ ASK**: "Does this feel like basic trading infrastructure?" (If yes, LEAN has it)
-4. **✅ IMPLEMENT**: Use LEAN's native methods, not custom solutions
+### **Use Numpy/Pandas For Analytics:**
+- **📊 Portfolio Metrics**: Sharpe ratios, VaR, correlation matrices, drawdown analysis
+- **🧮 Complex Math**: Covariance matrices, optimization, statistical analysis
+- **📈 Performance Analytics**: Risk-adjusted returns, factor analysis
+- **🔬 Research**: Backtesting analytics, strategy research, data exploration
+
+### **Don't Force Everything Into QC:**
+- **❌ Avoid**: Complex indicator warmup gymnastics
+- **❌ Avoid**: Fighting QC's framework for simple calculations
+- **❌ Avoid**: Over-engineering when numpy/pandas is simpler
+- **✅ Keep It Simple**: Let QC handle infrastructure, use Python for analytics
 
 ---
 
-## 🏗️ **CTA FRAMEWORK LEAN INTEGRATION**
+## 🏗️ **CTA FRAMEWORK INTEGRATION STRATEGY**
 
-### **Current Integration Status**
+### **✅ LEAN's SWEET SPOT - Use These Always:**
 
-#### **✅ PROPERLY USING LEAN:**
+#### **Core Trading Infrastructure:**
 ```python
-# Portfolio Management
-self.Portfolio.TotalPortfolioValue        # ✅ Using LEAN's portfolio tracking
-self.Portfolio[symbol].Quantity           # ✅ Using LEAN's position tracking
-self.Portfolio.TotalMarginUsed           # ✅ Using LEAN's margin tracking
+# Portfolio Management - LEAN excels here
+self.Portfolio.TotalPortfolioValue        # ✅ Real-time portfolio value
+self.Portfolio[symbol].Quantity           # ✅ Current positions
+self.Portfolio.TotalMarginUsed           # ✅ Margin tracking
+self.Portfolio.Cash                       # ✅ Available cash
 
-# Futures Management  
-self.AddFuture("ES", Resolution.Daily)    # ✅ Using LEAN's continuous contracts
-slice.FuturesChains[symbol]              # ✅ Using LEAN's chain data
-slice.SymbolChangedEvents                # ✅ Using LEAN's rollover events
+# Order Execution - LEAN's core strength
+self.MarketOrder(symbol, quantity)        # ✅ Market orders
+self.SetHoldings(symbol, percentage)      # ✅ Position sizing
+self.Liquidate(symbol)                    # ✅ Position closure
+self.CalculateOrderQuantity(symbol, target) # ✅ Quantity calculation
 
-# Data Access
-self.Securities[symbol].Price            # ✅ Using LEAN's price data
-self.Securities[symbol].HasData          # ✅ Using LEAN's data validation
-self.History(symbol, periods, resolution) # ✅ Using LEAN's historical data
+# Data Access - LEAN's data engine
+self.Securities[symbol].Price            # ✅ Current prices
+self.Securities[symbol].HasData          # ✅ Data validation
+self.History(symbol, periods, resolution) # ✅ Historical data
+slice.FuturesChains[symbol]              # ✅ Futures chain data
 
-# Warm-up System
-self.IsWarmingUp                         # ✅ Using LEAN's warm-up detection
-self.SetWarmUp(timedelta(days=60))       # ✅ Using LEAN's warm-up system
+# Basic Indicators - LEAN's built-ins
+self.ROC(symbol, period)                 # ✅ Rate of change
+self.STD(symbol, period)                 # ✅ Standard deviation  
+self.SMA(symbol, period)                 # ✅ Simple moving average
+self.C(symbol1, symbol2, period)         # ✅ Correlation
 
-# Universe Management (UPDATED)
-self._setup_futures_universe()          # ✅ Simple QC native setup
+# System Management - LEAN's framework
+self.IsWarmingUp                         # ✅ Warm-up detection
+self.SetWarmUp(timedelta(days=60))       # ✅ Automatic warmup
+self.Schedule.On(date_rule, time_rule, action) # ✅ Scheduling
 ```
 
-#### **🔧 NEEDS LEAN INTEGRATION:**
+### **🧮 NUMPY/PANDAS SWEET SPOT - Use These for Analytics:**
 
-**Indicators (High Priority):**
+#### **Portfolio Analytics:**
 ```python
-# ❌ Current: Custom indicator implementations
-# ✅ Should be: LEAN's built-in indicators
+import numpy as np
+import pandas as pd
 
-# Replace custom momentum calculations with:
-self.SMA(symbol, 20)                     # LEAN's Simple Moving Average
-self.RSI(symbol, 14)                     # LEAN's RSI
-self.ATR(symbol, 20)                     # LEAN's Average True Range
-self.MACD(symbol, 12, 26, 9)             # LEAN's MACD
+# Portfolio metrics - numpy/pandas excel here
+def calculate_portfolio_metrics(returns):
+    sharpe_ratio = returns.mean() / returns.std() * np.sqrt(252)
+    max_drawdown = (returns.cumsum() - returns.cumsum().cummax()).min()
+    var_95 = np.percentile(returns, 5)
+    return {'sharpe': sharpe_ratio, 'max_dd': max_drawdown, 'var_95': var_95}
 
-# Replace custom volatility calculations with:
-self.BB(symbol, 20, 2)                   # LEAN's Bollinger Bands
-self.STD(symbol, 20)                     # LEAN's Standard Deviation
+# Correlation analysis - pandas built-in
+correlation_matrix = returns_df.corr()
+
+# Risk calculations - numpy linear algebra
+portfolio_vol = np.sqrt(weights.T @ cov_matrix @ weights)
+
+# Performance analysis - pandas time series
+rolling_sharpe = returns.rolling(252).apply(lambda x: x.mean()/x.std()*np.sqrt(252))
 ```
 
-**Order Management (Medium Priority):**
+### **❌ AVOID THESE ANTI-PATTERNS:**
+
+#### **Don't Fight QC's Framework:**
 ```python
-# ❌ Current: Custom order tracking
-# ✅ Should be: LEAN's order system
+# ❌ AVOID: Complex indicator warmup gymnastics
+def complex_indicator_warmup():
+    for symbol in symbols:
+        history = self.History(symbol, 365, Resolution.Daily)
+        for index, row in history.iterrows():
+            data_point = IndicatorDataPoint(time, price)  # Complex!
+            indicator.Update(data_point)
 
-# Replace custom position sizing with:
-self.SetHoldings(symbol, percentage)     # LEAN's position sizing
-self.CalculateOrderQuantity(symbol, target) # LEAN's quantity calculation
+# ✅ SIMPLE: Let QC handle warmup naturally
+self.SetWarmUp(timedelta(days=365))  # QC handles everything
+# Indicators warm up automatically as data flows in
 
-# Replace custom order execution with:
-self.MarketOrder(symbol, quantity)       # LEAN's market orders
-self.Liquidate(symbol)                   # LEAN's position closure
+# ❌ AVOID: Over-engineering simple calculations
+def custom_portfolio_value():
+    total = 0
+    for symbol in self.Securities:
+        total += self.Securities[symbol].Holdings.HoldingsValue
+    return total
+
+# ✅ SIMPLE: Use QC's built-in
+portfolio_value = self.Portfolio.TotalPortfolioValue
+
+# ❌ AVOID: Reinventing basic indicators
+def custom_moving_average(prices, period):
+    return sum(prices[-period:]) / period
+
+# ✅ SIMPLE: Use QC's indicator
+sma = self.SMA(symbol, period)
 ```
 
-**Scheduling (Low Priority):**
+#### **Don't Force Analytics Into QC:**
 ```python
-# ❌ Current: Custom timing logic
-# ✅ Should be: LEAN's scheduling
+# ❌ AVOID: Complex QC-based portfolio analytics
+def qc_based_sharpe_calculation():
+    # Fighting QC's framework for something pandas does easily
 
-# Replace custom rebalancing timing with:
-self.Schedule.On(
-    self.DateRules.Every(DayOfWeek.Friday),
-    self.TimeRules.BeforeMarketClose("ES", 30),
-    self.WeeklyRebalance
-)
+# ✅ SIMPLE: Use pandas for what it's good at
+def calculate_sharpe(returns_series):
+    return returns_series.mean() / returns_series.std() * np.sqrt(252)
+
+# ❌ AVOID: QC-based correlation matrices when you have the data
+def qc_correlation_gymnastics():
+    # Complex QC indicator management for simple correlation
+
+# ✅ SIMPLE: Direct pandas correlation
+correlation_matrix = returns_df.corr()
 ```
 
 ---
@@ -355,18 +404,23 @@ status = ticket.Status
 
 ## 🎯 **SUCCESS METRICS**
 
-### **Target State:**
-- **90%+ LEAN Integration** - Most functionality uses LEAN's built-ins
-- **Zero Custom Infrastructure** - No custom portfolio/order/indicator systems
-- **Full QC Compatibility** - Works seamlessly on QC cloud platform
-- **Optimized Performance** - Leverages QC's optimized implementations
+### **Pragmatic Integration Goals:**
+- **🏗️ Infrastructure**: 95% LEAN (data, orders, portfolio, scheduling)
+- **📊 Analytics**: 80% Numpy/Pandas (metrics, correlations, optimization)
+- **🧠 Strategy Logic**: Hybrid approach - use best tool for each task
+- **⚡ Performance**: Fast, reliable, maintainable code
 
-### **Current Progress:**
-- **Foundation Layer**: 95% LEAN-compliant ✅ (Universe management now QC native)
-- **Strategy Layer**: 40% LEAN-compliant ⚠️ (Needs indicator integration)
-- **Execution Layer**: 60% LEAN-compliant ⚠️ (Needs order system integration)
-- **Risk Layer**: 70% LEAN-compliant ⚠️ (Needs portfolio property usage)
+### **Current Status:**
+- **✅ Core Infrastructure**: Using LEAN for data, orders, portfolio tracking
+- **✅ Basic Indicators**: Using LEAN's ROC, STD, SMA, correlation indicators  
+- **✅ Analytics**: Using numpy/pandas for portfolio metrics and risk calculations
+- **✅ Warmup Strategy**: Simplified - let QC handle indicator warmup naturally
+- **✅ Anti-Patterns Avoided**: No complex indicator gymnastics or forced QC analytics
 
-**✅ MAJOR UPDATE: Removed FuturesManager - Now using QC native universe management**
+### **Philosophy Wins:**
+- **🚀 Faster Development**: Less fighting with QC's framework
+- **🔧 Easier Maintenance**: Cleaner separation of concerns
+- **📈 Better Analytics**: Numpy/pandas excel at mathematical operations
+- **⚡ Reliable Execution**: QC handles what it's designed for
 
-**Next Priority: Integrate LEAN indicators into all strategies** 🎯 
+**✅ APPROACH VALIDATED: Right tool for the right job** 🎯 

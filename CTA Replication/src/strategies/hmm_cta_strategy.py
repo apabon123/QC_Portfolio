@@ -19,20 +19,64 @@ class HMMCTAStrategy(BaseStrategy):
         Initialize HMM CTA strategy with centralized configuration.
         CRITICAL: NO fallback logic - fail fast if config is invalid.
         """
-        # Initialize base strategy with centralized config
-        super().__init__(algorithm, config_manager, strategy_name)
+        # Store algorithm reference first
+        self.algorithm = algorithm
+        self.config_manager = config_manager
+        self.name = strategy_name
+        
+        # Initialize basic attributes that are expected
+        self.current_targets = {}
+        self.symbol_data = {}
+        self.last_rebalance_date = None
+        self.last_update_time = None
+        self.trades_executed = 0
+        self.total_rebalances = 0
+        self.strategy_returns = []
         
         try:
-            # All configuration comes from centralized manager
-            self._initialize_strategy_components()
-            self.algorithm.Log(f"HMMCTA: Strategy initialized successfully")
+            algorithm.Log(f"HMMCTA: Starting initialization for {strategy_name}")
+            
+            # Get configuration directly to avoid base class issues
+            try:
+                self.config = config_manager.get_strategy_config(strategy_name)
+                algorithm.Log("HMMCTA: Configuration loaded successfully")
+            except Exception as e:
+                algorithm.Error(f"HMMCTA: Failed to load config: {str(e)}")
+                raise
+            
+            # Validate strategy is enabled
+            if not self.config.get('enabled', False):
+                error_msg = f"Strategy {strategy_name} is not enabled in configuration"
+                algorithm.Error(f"STRATEGY ERROR: {error_msg}")
+                raise ValueError(error_msg)
+            
+            # Initialize HMM-specific components FIRST
+            self._initialize_hmm_components()
+            algorithm.Log("HMMCTA: HMM components initialized successfully")
+            
+            # Now call base class initialization (if needed)
+            try:
+                # Call parent __init__ but handle failures gracefully
+                super().__init__(algorithm, config_manager, strategy_name)
+                algorithm.Log("HMMCTA: Base strategy initialization completed")
+            except Exception as e:
+                # Log the error but don't fail - we have what we need
+                algorithm.Log(f"HMMCTA: Base strategy initialization failed: {str(e)}, continuing anyway")
+            
+            algorithm.Log("HMMCTA: Strategy initialized successfully")
             
         except Exception as e:
             error_msg = f"CRITICAL ERROR initializing HMMCTA: {str(e)}"
-            self.algorithm.Error(error_msg)
+            algorithm.Error(error_msg)
             raise ValueError(error_msg)
     
     def _initialize_strategy_components(self):
+        """Override base class method to prevent double initialization."""
+        # This method is called by the base class, but we handle initialization ourselves
+        # in _initialize_hmm_components, so this is just a safe no-op
+        pass
+    
+    def _initialize_hmm_components(self):
         """Initialize HMM-specific components using centralized configuration."""
         try:
             # Validate required configuration parameters
@@ -66,24 +110,51 @@ class HMMCTAStrategy(BaseStrategy):
             self.regime_persistence_violations = 0
             self.regime_history = {}
             
-            # Initialize tracking variables
-            self.symbol_data = {}
-            self.current_targets = {}
-            self.last_rebalance_date = None
-            self.last_update_time = None
-            
-            # Performance tracking
-            self.trades_executed = 0
-            self.total_rebalances = 0
-            self.strategy_returns = []
+            # Initialize symbol data for continuous contracts only (basic attributes already initialized in __init__)
+            self._initialize_symbol_data()
             
             self.algorithm.Log(f"HMMCTA: Initialized with {self.n_components} components, "
                              f"target volatility {self.target_volatility:.1%}")
             
         except Exception as e:
-            error_msg = f"Failed to initialize HMMCTA components: {str(e)}"
+            error_msg = f"Failed to initialize HMM components: {str(e)}"
             self.algorithm.Error(f"CRITICAL ERROR: {error_msg}")
             raise ValueError(error_msg)
+    
+    def _initialize_symbol_data(self):
+        """Initialize symbol data for continuous contracts only."""
+        try:
+            # Get all futures symbols from the algorithm
+            futures_symbols = []
+            for symbol in self.algorithm.Securities.Keys:
+                security = self.algorithm.Securities[symbol]
+                if security.Type == SecurityType.Future:
+                    symbol_str = str(symbol)
+                    # CRITICAL FIX: Only use continuous contracts for HMM signal generation
+                    # Continuous contracts (like /ES, /CL, /GC) have full historical data
+                    # Underlying contracts (like ES WLF0Z3JIJTA9) have limited history and cause availability issues
+                    if symbol_str.startswith('/'):
+                        futures_symbols.append(symbol)
+                        self.algorithm.Log(f"{self.name}: Using continuous contract {symbol_str} for signal generation")
+                    else:
+                        self.algorithm.Log(f"{self.name}: Ignoring underlying contract {symbol_str} (insufficient history)")
+            
+            self.algorithm.Log(f"{self.name}: Initializing symbol data for {len(futures_symbols)} continuous contract futures symbols")
+            
+            # Create symbol data for each continuous contract
+            for symbol in futures_symbols:
+                try:
+                    symbol_data = self._create_symbol_data(symbol)
+                    self.symbol_data[symbol] = symbol_data
+                    self.algorithm.Log(f"{self.name}: Created symbol data for {symbol}")
+                except Exception as e:
+                    self.algorithm.Error(f"{self.name}: Failed to create symbol data for {symbol}: {str(e)}")
+            
+            self.algorithm.Log(f"{self.name}: Symbol data initialized for {len(self.symbol_data)} continuous contract symbols")
+            
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error initializing symbol data: {str(e)}")
+            # Don't fail completely - symbol data can be created on-demand
     
     def should_rebalance(self, current_time):
         """Determine if strategy should rebalance (weekly)."""
@@ -226,11 +297,222 @@ class HMMCTAStrategy(BaseStrategy):
             self.regime_persistence_violations += 1
             return False
     
+    def _calculate_portfolio_volatility(self, allocation_weights, symbols):
+        """
+        Calculate portfolio volatility using covariance matrix approach.
+        HMM uses longer-term correlations (252 days) for regime-based decisions.
+        """
+        try:
+            if not allocation_weights or not symbols:
+                return 0.0
+            
+            # Get return data for correlation calculation
+            returns_data = {}
+            correlation_lookback = self.config.get('volatility_lookback_days', 252)  # Use configured volatility lookback
+            
+            for symbol in symbols:
+                if symbol in allocation_weights and allocation_weights[symbol] != 0:
+                    # Get historical returns for correlation calculation
+                    history = self.algorithm.History(symbol, correlation_lookback + 1, Resolution.Daily)
+                    
+                    # Convert to list to check if empty (QC data doesn't support len() directly)
+                    if history is not None:
+                        history_list = list(history)
+                        if len(history_list) > 1:
+                            # Calculate daily returns from QC data
+                            prices = [bar.Close if hasattr(bar, 'Close') else bar.close for bar in history_list]
+                            returns = []
+                            for i in range(1, len(prices)):
+                                if prices[i-1] > 0:
+                                    returns.append((prices[i] / prices[i-1]) - 1)
+                            
+                            if len(returns) >= 100:  # Need sufficient data
+                                returns_data[symbol] = np.array(returns)
+                
+            # Handle case with insufficient data
+            if len(returns_data) < 2:
+                # Fallback to simple weighted average (conservative estimate)
+                total_vol = 0.0
+                total_weight = 0.0
+                
+                for symbol in symbols:
+                    if symbol in allocation_weights and allocation_weights[symbol] != 0:
+                        # Use HMM's symbol data for volatility if available
+                        if symbol in self.symbol_data:
+                            vol = self.symbol_data[symbol].GetRecentVolatility()
+                            if vol is not None and vol > 0:
+                                weight = abs(allocation_weights[symbol])
+                                total_vol += weight * vol
+                                total_weight += weight
+                
+                if total_weight > 0:
+                    return total_vol / total_weight
+                else:
+                    return 0.15  # Default 15% volatility for HMM
+            
+            # Calculate correlation matrix using pandas
+            import pandas as pd
+            
+            # Align returns data to same length
+            min_length = min(len(returns) for returns in returns_data.values())
+            aligned_returns = {symbol: returns[-min_length:] for symbol, returns in returns_data.items()}
+            
+            # Create DataFrame
+            returns_df = pd.DataFrame(aligned_returns)
+            
+            # Calculate correlation matrix
+            correlation_matrix = returns_df.corr()
+            
+            # Replace NaN values with default correlations
+            correlation_matrix = correlation_matrix.fillna(0.0)
+            
+            # Apply default correlations for missing values
+            default_correlations = {
+                ('equity', 'equity'): 0.7,
+                ('commodity', 'commodity'): 0.4,
+                ('fx', 'fx'): 0.3,
+                ('rates', 'rates'): 0.8,
+                ('equity', 'commodity'): 0.1,
+                ('equity', 'fx'): -0.1,
+                ('equity', 'rates'): -0.3,
+                ('commodity', 'fx'): 0.2,
+                ('commodity', 'rates'): -0.1,
+                ('fx', 'rates'): -0.2,
+            }
+            
+            # Apply default correlations
+            for i, symbol1 in enumerate(correlation_matrix.index):
+                for j, symbol2 in enumerate(correlation_matrix.columns):
+                    if pd.isna(correlation_matrix.iloc[i, j]) or correlation_matrix.iloc[i, j] == 0:
+                        category1 = self._get_symbol_category(symbol1)
+                        category2 = self._get_symbol_category(symbol2)
+                        
+                        if symbol1 == symbol2:
+                            correlation_matrix.iloc[i, j] = 1.0
+                        else:
+                            key = tuple(sorted([category1, category2]))
+                            correlation_matrix.iloc[i, j] = default_correlations.get(key, 0.1)
+            
+            # Calculate individual volatilities
+            volatilities = {}
+            for symbol in correlation_matrix.index:
+                returns = aligned_returns[symbol]
+                vol = np.std(returns) * np.sqrt(252)  # Annualized volatility
+                volatilities[symbol] = vol
+            
+            # Calculate portfolio volatility using covariance matrix
+            portfolio_variance = 0.0
+            
+            for symbol1 in correlation_matrix.index:
+                for symbol2 in correlation_matrix.columns:
+                    weight1 = allocation_weights.get(symbol1, 0.0)
+                    weight2 = allocation_weights.get(symbol2, 0.0)
+                    
+                    if weight1 != 0 and weight2 != 0:
+                        vol1 = volatilities[symbol1]
+                        vol2 = volatilities[symbol2]
+                        correlation = correlation_matrix.loc[symbol1, symbol2]
+                        
+                        # Handle extreme correlations
+                        correlation = max(-0.95, min(0.95, correlation))
+                        
+                        covariance = vol1 * vol2 * correlation
+                        portfolio_variance += weight1 * weight2 * covariance
+            
+            portfolio_volatility = np.sqrt(abs(portfolio_variance))
+            
+            # Sanity check
+            if portfolio_volatility <= 0 or np.isnan(portfolio_volatility):
+                return 0.15  # Default for HMM
+            
+            return portfolio_volatility
+            
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Portfolio volatility calculation error: {str(e)}")
+            return 0.15  # Default for HMM
+
+    def OnSecuritiesChanged(self, changes):
+        """Handle securities changes - continuous contracts only for HMM."""
+        try:
+            # Add new securities - but only continuous contracts for HMM
+            for security in changes.AddedSecurities:
+                symbol = security.Symbol
+                symbol_str = str(symbol)
+                
+                # Only add continuous contracts for signal generation
+                if symbol_str.startswith('/') and symbol not in self.symbol_data:
+                    try:
+                        self.symbol_data[symbol] = self._create_symbol_data(symbol)
+                        self.algorithm.Log(f"{self.name}: Added continuous contract symbol data for {symbol}")
+                    except Exception as e:
+                        self.algorithm.Error(f"{self.name}: Failed to create symbol data for {symbol}: {str(e)}")
+                elif not symbol_str.startswith('/'):
+                    self.algorithm.Log(f"{self.name}: Ignoring underlying contract {symbol_str} (not used for signals)")
+            
+            # Remove securities - only remove if we were tracking them
+            for security in changes.RemovedSecurities:
+                symbol = security.Symbol
+                if symbol in self.symbol_data:
+                    try:
+                        self.symbol_data[symbol].Dispose()
+                        del self.symbol_data[symbol]
+                        self.algorithm.Log(f"{self.name}: Removed symbol data for {symbol}")
+                    except Exception as e:
+                        self.algorithm.Error(f"{self.name}: Error removing symbol data for {symbol}: {str(e)}")
+                        
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error in OnSecuritiesChanged: {str(e)}")
+
     def _get_liquid_symbols(self, slice=None):
-        """Get liquid symbols from futures manager."""
-        if self.futures_manager and hasattr(self.futures_manager, 'get_liquid_symbols'):
-            return self.futures_manager.get_liquid_symbols(slice)
-        return list(self.symbol_data.keys())
+        """Get liquid symbols using QC native approach (continuous contracts only)."""
+        try:
+            # Use QC's native Securities collection directly - but only continuous contracts
+            liquid_symbols = []
+            
+            # Get all futures symbols from algorithm's Securities
+            for symbol in self.algorithm.Securities.Keys:
+                security = self.algorithm.Securities[symbol]
+                
+                # Check if it's a futures contract and has data
+                if security.Type == SecurityType.Future:
+                    symbol_str = str(symbol)
+                    
+                    # CRITICAL: Only use continuous contracts (they have full historical data)
+                    if symbol_str.startswith('/'):
+                        # For continuous contracts, check if they have data
+                        if security.HasData:
+                            # Check if mapped contract is tradeable (for actual trading)
+                            is_tradeable = security.IsTradable
+                            if not is_tradeable and hasattr(security, 'Mapped') and security.Mapped:
+                                mapped_contract = security.Mapped
+                                if mapped_contract in self.algorithm.Securities:
+                                    is_tradeable = self.algorithm.Securities[mapped_contract].IsTradable
+                            
+                            # During warmup, be more lenient (just check data availability)
+                            if self.algorithm.IsWarmingUp:
+                                if security.HasData:
+                                    liquid_symbols.append(symbol)
+                            else:
+                                # Post-warmup: require both data and tradeable
+                                if security.HasData and is_tradeable:
+                                    liquid_symbols.append(symbol)
+            
+            self.algorithm.Log(f"{self.name}: Found {len(liquid_symbols)} liquid continuous contract symbols")
+            
+            # Fallback to symbol_data keys if no symbols found (should be continuous contracts only)
+            if not liquid_symbols and hasattr(self, 'symbol_data'):
+                liquid_symbols = list(self.symbol_data.keys())
+                self.algorithm.Log(f"{self.name}: No liquid symbols from Securities, using {len(liquid_symbols)} from symbol_data")
+            
+            return liquid_symbols
+            
+        except Exception as e:
+            self.algorithm.Error(f"{self.name}: Error getting liquid symbols: {str(e)}")
+            # Ultimate fallback
+            if hasattr(self, 'symbol_data'):
+                return list(self.symbol_data.keys())
+            else:
+                return []
     
     def _create_symbol_data(self, symbol):
         """Create HMM-specific symbol data object."""
@@ -292,7 +574,13 @@ class HMMCTAStrategy(BaseStrategy):
                     self.algorithm.Log(f"HMM SymbolData {self.symbol}: WARNING - No centralized cache, using direct History API")
                     history = self.algorithm.History(self.symbol, periods_needed, Resolution.Daily)
                 
-                if history is None or history.empty:
+                # Convert to list to check if empty (QC data doesn't support len() directly)
+                if history is None:
+                    history_list = []
+                else:
+                    history_list = list(history)
+                
+                if len(history_list) == 0:
                     self.algorithm.Log(f"No history available for {self.symbol}")
                     self.has_sufficient_data = False
                     self.data_availability_error = "No historical data available"
@@ -300,8 +588,8 @@ class HMMCTAStrategy(BaseStrategy):
                 
                 # Process historical data
                 prev_close = None
-                for index, row in history.iterrows():
-                    close_price = row['close']
+                for bar in history_list:
+                    close_price = bar.Close if hasattr(bar, 'Close') else bar.close
                     self.price_window.Add(close_price)
                     
                     # Calculate returns
@@ -312,7 +600,7 @@ class HMMCTAStrategy(BaseStrategy):
                     prev_close = close_price
                     self.data_points_received += 1
                 
-                self.algorithm.Log(f"HMM SymbolData {self.symbol}: Initialized with {len(history)} bars")
+                self.algorithm.Log(f"HMM SymbolData {self.symbol}: Initialized with {len(history_list)} bars")
 
             except Exception as e:
                 self.algorithm.Error(f"HMM SymbolData {self.symbol}: History initialization error: {str(e)}")

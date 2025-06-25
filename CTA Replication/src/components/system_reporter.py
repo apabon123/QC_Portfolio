@@ -62,12 +62,15 @@ class SystemReporter:
         self.algorithm.Log("SystemReporter: Initialized with professional analytics capabilities")
     
     def track_rebalance_performance(self, rebalance_result: Dict[str, Any]) -> None:
-        """Track performance of each rebalance operation."""
+        """Track performance of each rebalance operation using QC native methods."""
         try:
             if not rebalance_result or rebalance_result.get('status') != 'success':
                 return
                 
+            # Use QC's native Portfolio properties for tracking
             portfolio_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
+            total_holdings = float(self.algorithm.Portfolio.TotalHoldingsValue)
+            cash = float(self.algorithm.Portfolio.Cash)
             timestamp = self.algorithm.Time
             
             # Record rebalance event
@@ -303,18 +306,18 @@ class SystemReporter:
                 'period_end': current_time,
                 
                 # Performance metrics
-                'performance': self._calculate_period_performance(days=7),
-                'strategy_attribution': self._calculate_strategy_attribution(days=7),
-                'layer_attribution': self._calculate_layer_attribution(days=7),
+                'performance': self._calculate_period_performance(7),
+                'strategy_attribution': self._calculate_strategy_attribution(7),
+                'layer_attribution': self._calculate_layer_attribution(7),
                 
                 # Risk metrics
-                'risk_metrics': self._calculate_period_risk_metrics(days=7),
+                'risk_metrics': self._calculate_period_risk_metrics(7),
                 'position_analysis': self._analyze_position_concentration(),
-                'turnover_analysis': self._calculate_turnover_metrics(days=7),
+                'turnover_analysis': self._calculate_turnover_metrics(7),
                 
                 # Trade analysis
-                'trade_summary': self._summarize_trades(days=7),
-                'execution_quality': self._analyze_execution_quality(days=7),
+                'trade_summary': self._summarize_trades(7),
+                'execution_quality': self._analyze_execution_quality(7),
                 
                 # Alerts and recommendations
                 'alerts': self._compile_weekly_alerts(),
@@ -351,23 +354,23 @@ class SystemReporter:
                 'period_end': current_time,
                 
                 # Comprehensive performance analysis
-                'performance': self._calculate_period_performance(days=30),
+                'performance': self._calculate_period_performance(30),
                 'rolling_performance': self._calculate_rolling_performance(),
                 'benchmark_comparison': self._compare_to_benchmarks(),
                 
                 # Strategy analysis
-                'strategy_performance': self._analyze_strategy_performance(days=30),
+                'strategy_performance': self._analyze_strategy_performance(30),
                 'strategy_correlation': self._calculate_strategy_correlations(),
                 'allocation_efficiency': self._analyze_allocation_efficiency(),
                 
                 # Risk analysis
-                'risk_attribution': self._comprehensive_risk_analysis(days=30),
+                'risk_attribution': self._comprehensive_risk_analysis(30),
                 'stress_testing': self._perform_stress_tests(),
                 'regime_analysis': self._analyze_market_regimes(),
                 
                 # Operational metrics
-                'execution_analysis': self._comprehensive_execution_analysis(days=30),
-                'cost_analysis': self._analyze_transaction_costs(days=30),
+                'execution_analysis': self._comprehensive_execution_analysis(30),
+                'cost_analysis': self._analyze_transaction_costs(30),
                 'system_performance': self._analyze_system_performance(),
                 
                 # Forward-looking analysis
@@ -445,12 +448,63 @@ class SystemReporter:
     
     # Helper methods for calculations
     def _calculate_daily_return(self) -> float:
-        """Calculate daily return."""
-        if len(self.performance_history) < 2:
+        """Calculate daily return using QC native Portfolio tracking with mismatch detection."""
+        try:
+            # Use QC's native portfolio value tracking
+            current_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
+            
+            if hasattr(self, '_previous_portfolio_value'):
+                previous_value = self._previous_portfolio_value
+                daily_return = (current_value - previous_value) / previous_value if previous_value > 0 else 0.0
+                
+                # CRITICAL: Detect large equity moves without corresponding returns
+                if abs(daily_return) > 0.05:  # 5% daily move threshold
+                    self.algorithm.Log(f"CRITICAL: LARGE DAILY MOVE DETECTED")
+                    self.algorithm.Log(f"  Date: {self.algorithm.Time}")
+                    self.algorithm.Log(f"  Portfolio: ${previous_value:,.0f} -> ${current_value:,.0f}")
+                    self.algorithm.Log(f"  Daily Return: {daily_return:.2%}")
+                    
+                    # Log position details during large moves
+                    self.algorithm.Log(f"  Current Positions:")
+                    for holding in self.algorithm.Portfolio.Values:
+                        if holding.Invested:
+                            symbol_str = str(holding.Symbol).split()[0]
+                            mapped_symbol = getattr(holding.Symbol, 'Mapped', holding.Symbol)
+                            price = holding.Price
+                            quantity = holding.Quantity
+                            value = holding.HoldingsValue
+                            self.algorithm.Log(f"    {symbol_str} ({mapped_symbol}): {quantity} @ ${price:.4f} = ${value:,.0f}")
+                    
+                    # Check for potential pricing anomalies
+                    for holding in self.algorithm.Portfolio.Values:
+                        if holding.Invested and hasattr(self, '_previous_prices'):
+                            symbol_str = str(holding.Symbol).split()[0]
+                            current_price = holding.Price
+                            previous_price = self._previous_prices.get(symbol_str, current_price)
+                            
+                            if previous_price > 0:
+                                price_change = (current_price - previous_price) / previous_price
+                                if abs(price_change) > 0.1:  # 10% price change
+                                    self.algorithm.Log(f"    WARNING: {symbol_str} price anomaly: ${previous_price:.4f} -> ${current_price:.4f} ({price_change:.1%})")
+                
+                # Store current prices for next comparison
+                if not hasattr(self, '_previous_prices'):
+                    self._previous_prices = {}
+                for holding in self.algorithm.Portfolio.Values:
+                    if holding.Invested:
+                        symbol_str = str(holding.Symbol).split()[0]
+                        self._previous_prices[symbol_str] = holding.Price
+                        
+            else:
+                daily_return = 0.0
+            
+            # Update for next calculation
+            self._previous_portfolio_value = current_value
+            return daily_return
+            
+        except Exception as e:
+            self.algorithm.Log(f"Error calculating daily return: {str(e)}")
             return 0.0
-        current_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
-        previous_value = self.performance_history[-1]['portfolio_value']
-        return (current_value - previous_value) / previous_value if previous_value > 0 else 0.0
     
     def _calculate_portfolio_volatility(self, full_period: bool = False) -> float:
         """Calculate portfolio volatility."""
@@ -602,22 +656,57 @@ class SystemReporter:
     
     # Placeholder methods for comprehensive analysis (would be fully implemented)
     def _calculate_gross_exposure(self) -> float:
-        """Calculate current gross exposure."""
-        return sum(abs(float(h.HoldingsValue)) for h in self.algorithm.Portfolio.Values) / float(self.algorithm.Portfolio.TotalPortfolioValue)
-    
-    def _calculate_net_exposure(self) -> float:
-        """Calculate current net exposure."""
-        return sum(float(h.HoldingsValue) for h in self.algorithm.Portfolio.Values) / float(self.algorithm.Portfolio.TotalPortfolioValue)
-    
-    def _calculate_drawdown(self) -> float:
-        """Calculate current drawdown."""
-        if len(self.performance_history) < 2:
+        """Calculate gross exposure using QC native Portfolio methods."""
+        try:
+            # Use QC's native Portfolio.TotalAbsoluteHoldingsCost for gross exposure
+            total_portfolio_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
+            if total_portfolio_value <= 0:
+                return 0.0
+            
+            # Calculate gross exposure as sum of absolute position values
+            gross_value = sum(abs(float(holding.HoldingsValue)) for holding in self.algorithm.Portfolio.Values if holding.Invested)
+            return gross_value / total_portfolio_value
+            
+        except Exception as e:
+            self.algorithm.Log(f"Error calculating gross exposure: {str(e)}")
             return 0.0
-        
-        values = [d['portfolio_value'] for d in self.performance_history]
-        peak = max(values)
-        current = values[-1]
-        return (peak - current) / peak if peak > 0 else 0.0
+
+    def _calculate_net_exposure(self) -> float:
+        """Calculate net exposure using QC native Portfolio methods."""
+        try:
+            # Use QC's native Portfolio properties
+            total_portfolio_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
+            total_holdings_value = float(self.algorithm.Portfolio.TotalHoldingsValue)
+            
+            if total_portfolio_value <= 0:
+                return 0.0
+            
+            return total_holdings_value / total_portfolio_value
+            
+        except Exception as e:
+            self.algorithm.Log(f"Error calculating net exposure: {str(e)}")
+            return 0.0
+
+    def _calculate_drawdown(self) -> float:
+        """Calculate drawdown using QC native Portfolio tracking."""
+        try:
+            current_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
+            
+            # Update high water mark using QC's portfolio value
+            if not hasattr(self, 'high_water_mark'):
+                self.high_water_mark = current_value
+            else:
+                self.high_water_mark = max(self.high_water_mark, current_value)
+            
+            if self.high_water_mark <= 0:
+                return 0.0
+            
+            drawdown = (self.high_water_mark - current_value) / self.high_water_mark
+            return max(0.0, drawdown)
+            
+        except Exception as e:
+            self.algorithm.Log(f"Error calculating drawdown: {str(e)}")
+            return 0.0
     
     def _calculate_slippage(self, trade_data: Dict[str, Any]) -> float:
         """Calculate trade slippage."""
@@ -655,7 +744,74 @@ class SystemReporter:
         }
     
     # Additional placeholder methods (would be fully implemented in production)
-    def _calculate_period_performance(self, days: int) -> Dict[str, Any]: return {}
+    def _calculate_period_performance(self, days: int) -> Dict[str, Any]:
+        """Calculate actual period performance using QC native Portfolio tracking."""
+        try:
+            # Get current portfolio value using QC's native method
+            current_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
+            
+            # Get initial capital from config
+            initial_capital = float(self.config.get('algorithm', {}).get('initial_capital', 10000000))
+            
+            # Calculate YTD return (from start of algorithm)
+            ytd_return = (current_value - initial_capital) / initial_capital if initial_capital > 0 else 0.0
+            
+            # Calculate monthly return (approximate - from performance history if available)
+            monthly_return = 0.0
+            if hasattr(self, 'performance_history') and len(self.performance_history) >= days:
+                # Get portfolio value from ~30 days ago
+                try:
+                    month_ago_data = self.performance_history[-(days + 1)] if len(self.performance_history) > days else self.performance_history[0]
+                    month_ago_value = month_ago_data.get('portfolio_value', initial_capital)
+                    if month_ago_value > 0:
+                        monthly_return = (current_value - month_ago_value) / month_ago_value
+                except (IndexError, KeyError):
+                    # Fallback: estimate from recent performance data
+                    recent_data = self.performance_history[-min(days, len(self.performance_history)):]
+                    if recent_data and 'daily_return' in recent_data[0]:
+                        daily_returns = [d.get('daily_return', 0.0) for d in recent_data if 'daily_return' in d]
+                        if daily_returns:
+                            monthly_return = sum(daily_returns)
+            
+            # If no history available, calculate based on current vs initial
+            if monthly_return == 0.0 and len(self.performance_history) == 0:
+                # For the first month, monthly return = YTD return
+                monthly_return = ytd_return
+            
+            # Calculate other performance metrics
+            portfolio_volatility = self._calculate_portfolio_volatility()
+            sharpe_ratio = self._calculate_sharpe_ratio()
+            max_drawdown = self._calculate_drawdown()
+            
+            return {
+                'current_value': current_value,
+                'initial_capital': initial_capital,
+                'monthly_return': monthly_return,
+                'ytd_return': ytd_return,
+                'portfolio_volatility': portfolio_volatility,
+                'sharpe_ratio': sharpe_ratio,
+                'max_drawdown': max_drawdown,
+                'calculation_method': 'qc_native_portfolio_tracking'
+            }
+            
+        except Exception as e:
+            self.algorithm.Log(f"Error calculating period performance: {str(e)}")
+            # Return safe defaults instead of empty dict
+            current_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
+            initial_capital = float(self.config.get('algorithm', {}).get('initial_capital', 10000000))
+            ytd_return = (current_value - initial_capital) / initial_capital if initial_capital > 0 else 0.0
+            
+            return {
+                'current_value': current_value,
+                'initial_capital': initial_capital,
+                'monthly_return': ytd_return,  # Fallback to YTD
+                'ytd_return': ytd_return,
+                'portfolio_volatility': 0.0,
+                'sharpe_ratio': 0.0,
+                'max_drawdown': 0.0,
+                'calculation_method': 'fallback_simple'
+            }
+    
     def _calculate_strategy_attribution(self, days: int) -> Dict[str, Any]: return {}
     def _calculate_layer_attribution(self, days: int) -> Dict[str, Any]: return {}
     def _calculate_period_risk_metrics(self, days: int) -> Dict[str, Any]: return {}
@@ -684,7 +840,33 @@ class SystemReporter:
     def _analyze_system_performance(self) -> Dict[str, Any]: return {}
     def _generate_market_outlook(self) -> Dict[str, Any]: return {}
     def _calculate_annualized_return(self, total_return: float) -> float: return total_return
-    def _calculate_max_drawdown(self) -> float: return 0.0
+    def _calculate_max_drawdown(self) -> float:
+        """Calculate maximum drawdown using performance history."""
+        try:
+            if len(self.performance_history) < 2:
+                return 0.0
+            
+            # Get portfolio values from history
+            portfolio_values = [d.get('portfolio_value', 0.0) for d in self.performance_history if 'portfolio_value' in d]
+            
+            if len(portfolio_values) < 2:
+                return 0.0
+            
+            # Calculate running maximum and drawdowns
+            running_max = portfolio_values[0]
+            max_drawdown = 0.0
+            
+            for value in portfolio_values[1:]:
+                running_max = max(running_max, value)
+                if running_max > 0:
+                    drawdown = (running_max - value) / running_max
+                    max_drawdown = max(max_drawdown, drawdown)
+            
+            return max_drawdown
+            
+        except Exception as e:
+            self.algorithm.Log(f"Error calculating max drawdown: {str(e)}")
+            return 0.0
     def _calculate_calmar_ratio(self) -> float: return 0.0
     def _calculate_sortino_ratio(self) -> float: return 0.0
     def _final_strategy_analysis(self) -> Dict[str, Any]: return {}

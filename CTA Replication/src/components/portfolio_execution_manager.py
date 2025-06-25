@@ -44,10 +44,13 @@ class PortfolioExecutionManager:
         self.custom_fill_tracking = self.qc_config.get('order_management', {}).get('custom_fill_tracking', False)
         self.log_order_events = self.qc_config.get('order_management', {}).get('log_order_events', True)
         
-        # Trade tracking - keep for backward compatibility or when QC features disabled
-        self.trade_history = []
-        self.total_trades_executed = 0
-        self.execution_errors = 0
+        # INTEGRATION: Bad Data Position Manager (injected from main.py)
+        self.bad_data_manager = None  # Will be set by main.py
+        
+        # QC NATIVE: Use QC's built-in order and transaction tracking instead of custom arrays
+        # self.trade_history = []  # REMOVED: Use algorithm.Transactions instead
+        # self.total_trades_executed = 0  # REMOVED: Use len(algorithm.Transactions.GetOrders()) instead
+        self.execution_errors = 0  # Keep for error tracking only
         self.last_portfolio_snapshot = {}
         
         # Log configuration
@@ -317,7 +320,7 @@ class PortfolioExecutionManager:
         )
         
         # Update tracking
-        self.total_trades_executed += execution_summary['orders_placed']
+        # self.total_trades_executed += execution_summary['orders_placed']  # REMOVED: Use len(algorithm.Transactions.GetOrders()) instead
         self.execution_errors += execution_summary['execution_errors']
         
         # Log execution results
@@ -365,11 +368,39 @@ class PortfolioExecutionManager:
                 return result
             
             security = self.algorithm.Securities[mapped_contract]
+            
+            # ROLLOVER FIX: Use QC's recommended slice.Contains() pattern
+            # During rollover, new contract may not have HasData yet but can still be traded
+            continuous_security = self.algorithm.Securities[symbol]
+            current_slice = getattr(self.algorithm, 'current_slice', None)
+            
             if not security.HasData:
-                result['error'] = True
-                result['blocked_reason'] = f"No data for mapped contract {mapped_contract}"
-                self.algorithm.Log(f"    ERROR: {result['blocked_reason']}")
-                return result
+                # Check if this is a rollover situation (continuous has data but mapped doesn't)
+                if continuous_security.HasData:
+                    # Use QC's recommended slice.Contains() pattern for rollover validation
+                    if current_slice and current_slice.ContainsKey(mapped_contract):
+                        price_info = f"slice price available"
+                        if hasattr(security, 'Price') and security.Price and security.Price > 0:
+                            price_info = f"price ${security.Price:.2f}"
+                        
+                        self.algorithm.Log(f"    ROLLOVER: New contract {mapped_contract} ready via slice ({price_info})")
+                        # Continue execution - QC slice contains the data we need
+                    else:
+                        # Check if price is available even without HasData
+                        if hasattr(security, 'Price') and security.Price and security.Price > 0:
+                            price_info = f"price ${security.Price:.2f}"
+                            self.algorithm.Log(f"    ROLLOVER: New contract {mapped_contract} has {price_info}, proceeding")
+                            # Continue execution - price is available for trading
+                        else:
+                            self.algorithm.Log(f"    ROLLOVER: New contract {mapped_contract} not ready yet, skipping")
+                            result['error'] = True
+                            result['blocked_reason'] = f"Rollover contract {mapped_contract} not ready"
+                            return result
+                else:
+                    result['error'] = True
+                    result['blocked_reason'] = f"No data for mapped contract {mapped_contract}"
+                    self.algorithm.Log(f"    ERROR: {result['blocked_reason']}")
+                    return result
         except Exception as e:
             result['error'] = True
             result['blocked_reason'] = f"Error accessing security: {str(e)}"
@@ -385,12 +416,23 @@ class PortfolioExecutionManager:
                 self.algorithm.Log(f"    ERROR: {result['blocked_reason']}")
                 return result
             
-            # Additional check for data availability using QC's recommended approach
+            # REMOVED: Duplicate slice validation - now handled by centralized validator
+            # The _is_symbol_ready_for_execution method already validates slice data
+            # using our enhanced CentralizedDataValidator
+            
+            # Additional QC native validation - ROLLOVER-AWARE
             if not security.HasData or security.Price <= 0:
-                result['error'] = True
-                result['blocked_reason'] = f"Security {mapped_contract} has invalid price data: {security.Price}"
-                self.algorithm.Log(f"    ERROR: {result['blocked_reason']}")
-                return result
+                # During rollover, new contract might not have data yet but price might be available
+                if continuous_security.HasData and hasattr(security, 'Price') and security.Price and security.Price > 0:
+                    old_price = continuous_security.Price if hasattr(continuous_security, 'Price') else 0
+                    price_diff = security.Price - old_price if old_price > 0 else 0
+                    self.algorithm.Log(f"    ROLLOVER: Using price ${security.Price:.2f} from new contract {mapped_contract} (vs ${old_price:.2f} old, diff: ${price_diff:+.2f})")
+                    # Continue with execution using available price
+                else:
+                    result['error'] = True
+                    result['blocked_reason'] = f"Security {mapped_contract} has invalid price data: {security.Price}"
+                    self.algorithm.Log(f"    ERROR: {result['blocked_reason']}")
+                    return result
             
             price = float(security.Price)
             
@@ -442,19 +484,33 @@ class PortfolioExecutionManager:
             self.algorithm.Log(f"    BLOCKED: {result['blocked_reason']}")
             return result
         
+        # INTEGRATION: Bad Data Position Manager - Check if new trades allowed
+        if self.bad_data_manager and not self.bad_data_manager.should_allow_new_trade(symbol):
+            result['blocked_reason'] = f"Bad data manager blocked new trade for {result['ticker']}"
+            self.algorithm.Log(f"    BLOCKED: {result['blocked_reason']}")
+            
+            # Log the specific bad data strategy for this symbol
+            if symbol in self.bad_data_manager.problematic_positions:
+                strategy = self.bad_data_manager.problematic_positions[symbol]['strategy']
+                issue_count = self.bad_data_manager.problematic_positions[symbol]['issue_count']
+                self.algorithm.Log(f"    BAD DATA: Strategy={strategy}, Issues={issue_count}")
+            
+            return result
+        
         try:
-            # Calculate quantity using futures manager
-            if hasattr(self.algorithm.futures_manager, 'get_effective_multiplier'):
-                multiplier = self.algorithm.futures_manager.get_effective_multiplier(mapped_contract)
-            else:
-                # Fallback multiplier calculation
-                contract_multiplier = security.SymbolProperties.ContractMultiplier
-                point_value = security.SymbolProperties.MinimumPriceVariation
-                multiplier = contract_multiplier if contract_multiplier > 0 else 1.0
+            # Calculate quantity using QC's native properties (no custom futures manager)
+            contract_multiplier = security.SymbolProperties.ContractMultiplier
+            multiplier = contract_multiplier if contract_multiplier > 0 else 1.0
             
             self.algorithm.Log(f"    Multiplier: {multiplier}")
             
             quantity_diff = int(trade_value / (price * multiplier))
+            
+            # CRITICAL FIX: Explicit zero quantity check to prevent QC error
+            if quantity_diff == 0:
+                result['blocked_reason'] = f"Calculated quantity is exactly zero"
+                self.algorithm.Log(f"    BLOCKED: {result['blocked_reason']}")
+                return result
             
             if abs(quantity_diff) < 1:
                 result['blocked_reason'] = f"Quantity {quantity_diff} rounds to less than 1 contract"
@@ -488,16 +544,16 @@ class PortfolioExecutionManager:
             self.algorithm.Log(f"    ✓ ORDER PLACED: {result['ticker']} {quantity_diff:+d} contracts (${trade_value:+,.0f})")
             
             # Store trade history
-            self.trade_history.append({
-                'time': self.algorithm.Time,
-                'symbol': symbol,
-                'ticker': result['ticker'],
-                'quantity': quantity_diff,
-                'trade_value': trade_value,
-                'price': price,
-                'is_rollover': result['is_rollover'],
-                'tag': trade_tag
-            })
+            # self.trade_history.append({
+            #     'time': self.algorithm.Time,
+            #     'symbol': symbol,
+            #     'ticker': result['ticker'],
+            #     'quantity': quantity_diff,
+            #     'trade_value': trade_value,
+            #     'price': price,
+            #     'is_rollover': result['is_rollover'],
+            #     'tag': trade_tag
+            # })
             
         except Exception as e:
             self.algorithm.Log(f"    ORDER ERROR: {str(e)}")
@@ -514,19 +570,8 @@ class PortfolioExecutionManager:
             'liquidated_tickers': []
         }
         
-        # Convert final_targets to use continuous contract symbols for comparison
-        target_continuous_symbols = set()
-        for symbol in final_targets.keys():
-            # If this is already a continuous contract symbol, use it directly
-            if hasattr(symbol, 'Canonical') and symbol.Canonical == symbol:
-                target_continuous_symbols.add(symbol)
-            else:
-                # Find the corresponding continuous contract symbol
-                for futures_symbol in self.algorithm.futures_manager.futures_symbols:
-                    if (futures_symbol in self.algorithm.Securities and 
-                        self.algorithm.Securities[futures_symbol].Mapped == symbol):
-                        target_continuous_symbols.add(futures_symbol)
-                        break
+        # Convert final_targets to continuous contract symbols using QC's native approach
+        target_continuous_symbols = set(final_targets.keys())  # Targets should already be continuous symbols
         
         # Check each holding against our target continuous contracts
         for holding in self.algorithm.Portfolio.Values:
@@ -551,17 +596,8 @@ class PortfolioExecutionManager:
                         liquidation_summary['liquidations'] += 1
                         liquidation_summary['liquidated_tickers'].append(ticker)
                         
-                        # Store liquidation in trade history
-                        self.trade_history.append({
-                            'time': self.algorithm.Time,
-                            'symbol': str(holding.Symbol),
-                            'ticker': ticker,
-                            'quantity': -holding.Quantity,
-                            'trade_value': -holding.HoldingsValue,
-                            'price': holding.Price,
-                            'is_rollover': False,
-                            'tag': 'ExecutionManager_Liquidate'
-                        })
+                        # QC NATIVE: Use algorithm.Transactions instead of custom trade history
+                        # Liquidation is automatically tracked by QC's Transactions system
                         
                     except Exception as e:
                         self.algorithm.Log(f"  LIQUIDATION ERROR: {str(e)}")
@@ -749,17 +785,29 @@ class PortfolioExecutionManager:
     
     # Monitoring and tracking methods
     def get_execution_metrics(self):
-        """Get comprehensive execution metrics with config compliance."""
-        return {
-            'total_trades_executed': self.total_trades_executed,
-            'execution_errors': self.execution_errors,
-            'last_portfolio_snapshot': self.last_portfolio_snapshot,
-            'config_parameters': {
-                'execution': self.execution_config,
-                'risk': self.risk_config,
-                'constraints': self.constraints_config
+        """Get comprehensive execution metrics using QC native methods."""
+        try:
+            # Use QC's native Transactions for trade counting
+            total_orders = len(self.algorithm.Transactions.GetOrders())
+            filled_orders = len([order for order in self.algorithm.Transactions.GetOrders() if order.Status == OrderStatus.Filled])
+            
+            return {
+                'total_orders': total_orders,
+                'filled_orders': filled_orders,
+                'execution_errors': self.execution_errors,
+                'success_rate': filled_orders / total_orders if total_orders > 0 else 0.0,
+                'portfolio_value': float(self.algorithm.Portfolio.TotalPortfolioValue),
+                'total_holdings_value': float(self.algorithm.Portfolio.TotalHoldingsValue),
+                'cash': float(self.algorithm.Portfolio.Cash),
+                'config_parameters': {
+                    'execution': self.execution_config,
+                    'risk': self.risk_config,
+                    'constraints': self.constraints_config
+                }
             }
-        }
+        except Exception as e:
+            self.algorithm.Log(f"Error getting execution metrics: {str(e)}")
+            return {}
     
     def track_order_execution(self, order_event):
         """
@@ -780,7 +828,7 @@ class PortfolioExecutionManager:
                 elif self.custom_fill_tracking:
                     self._process_custom_fill_tracking(order_event)
                 
-                self.total_trades_executed += 1
+                # QC NATIVE: Trade count tracked automatically by algorithm.Transactions
                 
             elif order_event.Status in [OrderStatus.Canceled, OrderStatus.CancelPending]:
                 if self.log_order_events:
@@ -821,37 +869,10 @@ class PortfolioExecutionManager:
         self._add_to_custom_history(order_event)
     
     def _add_to_custom_history(self, order_event):
-        """Add to our custom trade history"""
-        # Check if trade already exists
-        existing_trade = None
-        for trade in self.trade_history:
-            if (trade['time'] == self.algorithm.Time and 
-                abs(trade['quantity'] - order_event.FillQuantity) < 0.1):
-                existing_trade = trade
-                break
-        
-        if not existing_trade:
-            # Find ticker name
-            ticker = "Unknown"
-            for symbol in self.algorithm.futures_manager.futures_symbols:
-                if (symbol in self.algorithm.Securities and 
-                    self.algorithm.Securities[symbol].Mapped == order_event.Symbol):
-                    ticker = self._extract_ticker_from_symbol(symbol)
-                    break
-            
-            tag = order_event.Tag if hasattr(order_event, 'Tag') else 'Unknown'
-            
-            self.trade_history.append({
-                'time': self.algorithm.Time,
-                'symbol': str(order_event.Symbol),
-                'ticker': ticker,
-                'quantity': order_event.FillQuantity,
-                'trade_value': order_event.FillQuantity * order_event.FillPrice,
-                'price': order_event.FillPrice,
-                'is_rollover': 'Rollover' in tag,
-                'tag': tag,
-                'order_id': order_event.OrderId
-            })
+        """QC NATIVE: Use algorithm.Transactions instead of custom trade history"""
+        # Custom trade history removed - use QC's native Transactions system
+        # Access via: self.algorithm.Transactions.GetOrders()
+        pass
     
     def get_qc_transaction_summary(self):
         """Get transaction summary using QC's built-in features"""
@@ -879,41 +900,37 @@ class PortfolioExecutionManager:
             return None
 
     def get_position_summary(self):
-        """Get current position summary with config compliance info."""
+        """Get current position summary using QC native Portfolio methods."""
         positions = {}
-        total_value = self.algorithm.Portfolio.TotalPortfolioValue
+        
+        # Use QC's native Portfolio properties
+        total_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
         
         if total_value <= 0:
             return positions
         
+        # Use QC's native Portfolio.Values to get all holdings
         for holding in self.algorithm.Portfolio.Values:
             if holding.Invested:
-                # Find symbol and ticker
-                symbol = None
-                ticker = "Unknown"
+                # Find corresponding futures symbol
+                ticker = self._extract_ticker_from_symbol(holding.Symbol)
                 
-                for sym in self.algorithm.futures_manager.futures_symbols:
-                    if (sym in self.algorithm.Securities and 
-                        self.algorithm.Securities[sym].Mapped == holding.Symbol):
-                        symbol = sym
-                        ticker = self._extract_ticker_from_symbol(sym)
-                        break
+                # Use QC's native holding properties
+                weight = float(holding.HoldingsValue) / total_value
+                max_position_limit = self.risk_config['max_single_position']
                 
-                if symbol:
-                    weight = holding.HoldingsValue / total_value
-                    max_position_limit = self.risk_config['max_single_position']
-                    
-                    positions[ticker] = {
-                        'symbol': symbol,
-                        'quantity': holding.Quantity,
-                        'market_value': holding.HoldingsValue,
-                        'weight': weight,
-                        'unrealized_pnl': holding.UnrealizedProfit,
-                        'config_compliance': {
-                            'within_limits': abs(weight) <= max_position_limit,
-                            'limit': max_position_limit
-                        }
+                positions[ticker] = {
+                    'symbol': holding.Symbol,
+                    'quantity': int(holding.Quantity),
+                    'market_value': float(holding.HoldingsValue),
+                    'weight': weight,
+                    'unrealized_pnl': float(holding.UnrealizedProfit),
+                    'average_price': float(holding.AveragePrice),
+                    'config_compliance': {
+                        'within_limits': abs(weight) <= max_position_limit,
+                        'limit': max_position_limit
                     }
+                }
         
         return positions
 
@@ -929,24 +946,14 @@ class PortfolioExecutionManager:
     def track_rollover_event(self, old_symbol, new_symbol):
         """
         Track rollover events from QC's OnSymbolChangedEvents.
-        This is much cleaner than manual symbol matching.
+        QC NATIVE: Rollover events are automatically tracked by QC's SymbolChangedEvents.
         """
         try:
-            self.algorithm.Log(f"EXECUTION MANAGER: Tracking rollover {old_symbol} → {new_symbol}")
+            self.algorithm.Log(f"EXECUTION MANAGER: Rollover tracked {old_symbol} → {new_symbol}")
             
-            # Store rollover event in trade history for reporting
-            self.trade_history.append({
-                'time': self.algorithm.Time,
-                'symbol': str(new_symbol),
-                'ticker': self._extract_ticker_from_symbol(new_symbol),
-                'quantity': 0,  # Rollover is position-neutral
-                'trade_value': 0,
-                'price': 0,
-                'is_rollover': True,
-                'tag': f'QC_Rollover_{old_symbol}_to_{new_symbol}',
-                'old_symbol': str(old_symbol),
-                'rollover_date': self.algorithm.Time.date()
-            })
+            # QC NATIVE: Rollover events are automatically handled by QC's continuous contract system
+            # No need for custom tracking - positions automatically transfer to new contract
+            # Access rollover history via slice.SymbolChangedEvents in OnData()
             
             # Update any internal tracking if needed
             if hasattr(self, 'rollover_events'):
@@ -966,58 +973,81 @@ class PortfolioExecutionManager:
             self.algorithm.Log(f"ERROR tracking rollover event: {str(e)}")
     
     def _is_symbol_ready_for_execution(self, symbol):
-        """Check if a symbol is ready for execution using QC native methods."""
+        """Check if a symbol is ready for execution using centralized data validator."""
         try:
-            # Use QC native contract resolver if available
-            if hasattr(self.algorithm, 'contract_resolver') and self.algorithm.contract_resolver:
-                validation_result = self.algorithm.contract_resolver.validate_symbol_for_trading(symbol)
+            # Get current slice data if available
+            current_slice = getattr(self.algorithm, 'current_slice', None)
+            
+            # Use centralized data validator if available
+            if hasattr(self.algorithm, 'data_validator'):
+                validation_result = self.algorithm.data_validator.validate_symbol_for_trading(symbol, current_slice)
                 
-                if validation_result['valid']:
-                    # Log QC native properties for diagnostics
-                    qc_props = validation_result.get('qc_properties', {})
+                if validation_result['is_valid']:
                     trading_symbol = validation_result.get('trading_symbol', symbol)
                     
                     if trading_symbol != symbol:
-                        self.algorithm.Log(f"QC Native: {symbol} -> {trading_symbol} for execution")
+                        self.algorithm.Log(f"EXECUTION: {symbol} -> {trading_symbol} for execution")
                     
                     return True
                 else:
-                    # Log why validation failed with QC diagnostics
+                    # Log why validation failed
                     reason = validation_result.get('reason', 'Unknown')
-                    qc_props = validation_result.get('qc_properties', {})
-                    
-                    self.algorithm.Log(f"QC Native: Execution validation failed for {symbol}: {reason}")
-                    if qc_props:
-                        self.algorithm.Log(f"  QC Properties: {qc_props}")
-                    
+                    self.algorithm.Log(f"EXECUTION: Validation failed for {symbol}: {reason}")
                     return False
             
-            # Fallback to basic QC validation if contract resolver unavailable
+            # Fallback to basic QC validation if validator not available
             if symbol not in self.algorithm.Securities:
                 return False
             
-            # Use QC's native .Mapped property directly
             security = self.algorithm.Securities[symbol]
-            mapped_contract = getattr(security, 'Mapped', None)
             
-            if mapped_contract is None:
-                self.algorithm.Log(f"QC Native Fallback: No .Mapped contract for {symbol}")
+            # QC RECOMMENDED PATTERN: Use slice.Contains() first, then HasData
+            if current_slice and current_slice.ContainsKey(symbol):
+                # Symbol is in current slice - QC's recommended validation approach
+                if security.IsTradable:
+                    # Try to get price from slice or security
+                    if hasattr(security, 'Price') and security.Price > 0:
+                        return True
+                    else:
+                        self.algorithm.Log(f"EXECUTION: {symbol} in slice but no valid price")
+                        return False
+                else:
+                    return False
+            
+            # Fallback to traditional HasData validation
+            if not security.HasData:
+                self.algorithm.Log(f"EXECUTION: {symbol} not in slice and no HasData")
                 return False
             
-            # Check mapped contract with QC native properties
-            if mapped_contract not in self.algorithm.Securities:
+            if not security.Price or security.Price <= 0:
+                self.algorithm.Log(f"EXECUTION: {symbol} has invalid price: {security.Price}")
                 return False
             
-            mapped_security = self.algorithm.Securities[mapped_contract]
+            # For futures, check if tradeable (mapped contract) - ROLLOVER-AWARE
+            if hasattr(security, 'Mapped') and security.Mapped:
+                mapped_contract = security.Mapped
+                if mapped_contract in self.algorithm.Securities:
+                    mapped_security = self.algorithm.Securities[mapped_contract]
+                    
+                    # ROLLOVER FIX: During rollover, new contract may not have HasData yet
+                    # Check if this is a rollover situation by seeing if the continuous contract has data
+                    # but the mapped contract doesn't
+                    if security.HasData and not mapped_security.HasData:
+                        # This is likely a rollover - be more lenient
+                        # Allow execution if the continuous contract is tradeable
+                        self.algorithm.Log(f"EXECUTION: Rollover detected for {symbol} -> {mapped_contract}, using lenient validation")
+                        return security.IsTradable
+                    
+                    # Normal case: both should have data
+                    return mapped_security.IsTradable and mapped_security.HasData
             
-            # Use QC's native validation properties
-            if not getattr(mapped_security, 'HasData', False):
-                return False
-            
-            if not getattr(mapped_security, 'Price', None) or mapped_security.Price <= 0:
-                return False
-            
-            return True
+            return security.IsTradable
             
         except Exception as e:
+            self.algorithm.Error(f"EXECUTION: Error validating symbol {symbol}: {str(e)}")
             return False
+
+    def set_bad_data_manager(self, bad_data_manager):
+        """Set the bad data position manager for integration."""
+        self.bad_data_manager = bad_data_manager
+        self.algorithm.Log("ExecutionManager: Bad Data Position Manager integrated")

@@ -22,13 +22,26 @@ try:
     sys.path.append(os.path.join(os.path.dirname(__file__), 'src', 'components'))
     sys.path.append(os.path.join(os.path.dirname(__file__), 'src', 'utils'))
     
-    # Import configuration first (most critical)
-    from algorithm_config_manager import AlgorithmConfigManager
+    # Import configuration first (most critical) - try multiple import paths
+    try:
+        from algorithm_config_manager import AlgorithmConfigManager
+    except ImportError:
+        try:
+            from src.config.algorithm_config_manager import AlgorithmConfigManager
+        except ImportError:
+            # Final fallback - direct path
+            import sys
+            import os
+            config_path = os.path.join(os.path.dirname(__file__), 'src', 'config')
+            if config_path not in sys.path:
+                sys.path.insert(0, config_path)
+            from algorithm_config_manager import AlgorithmConfigManager
     
     # Import other components
     from three_layer_orchestrator import ThreeLayerOrchestrator  
     from portfolio_execution_manager import PortfolioExecutionManager
     from system_reporter import SystemReporter
+    from futures_rollover_manager import FuturesRolloverManager
     # Removed FuturesManager and OptimizedSymbolManager - using QC native methods instead
     
     # Defensive import for AssetFilterManager
@@ -37,13 +50,14 @@ try:
     except ImportError:
         # AssetFilterManager will be available from universe.py fallback
         AssetFilterManager = None
-    from qc_native_data_accessor import QCNativeDataAccessor
-    from simplified_data_integrity_checker import SimplifiedDataIntegrityChecker
-    from unified_data_interface import UnifiedDataInterface
+    # Removed QCNativeDataAccessor, SimplifiedDataIntegrityChecker, UnifiedDataInterface
+    # Using direct QuantConnect/LEAN native methods instead of custom wrappers
     
     # Import utilities
     from universe_helpers import UniverseHelpers
     from futures_helpers import FuturesHelpers
+    from warmup_manager import WarmupManager
+    # Removed rollover_handler import - using QuantConnect's simple official pattern
     
     IMPORTS_SUCCESSFUL = True
     IMPORT_ERROR = None
@@ -71,6 +85,11 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
         Uses centralized configuration management with complete validation.
         """
         try:
+            # CHECK: Verify imports were successful
+            if not IMPORTS_SUCCESSFUL:
+                self.Error(f"CRITICAL: Import failed during startup: {IMPORT_ERROR}")
+                raise Exception(f"Import failure: {IMPORT_ERROR}")
+            
             # STEP 1: Initialize configuration management FIRST
             self.config_manager = AlgorithmConfigManager(self)
             self.config = self.config_manager.load_and_validate_config(variant="full")
@@ -84,7 +103,8 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self.Log(line)
             
             # STEP 4: QC NATIVE WARM-UP SETUP (BASED ON PRIMER)
-            self._setup_enhanced_warmup()
+            self.warmup_manager = WarmupManager(self, self.config_manager)
+            self.warmup_manager.setup_enhanced_warmup()
             
             # STEP 5: Initialize QC native features from validated config
             algo_config = self.config_manager.get_algorithm_config()
@@ -102,24 +122,29 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             
             # STEP 6: Symbol management now handled directly by QC native methods
             # No need for custom symbol management - QC handles this internally
+            # Data access now uses direct LEAN methods (self.History, self.Securities, etc.)
             
-            # Initialize QC native data accessor (Phase 2)
-            self.data_accessor = QCNativeDataAccessor(self)
+            # STEP 7: Initialize centralized data validator FIRST (used by all components)
+            from src.components.centralized_data_validator import CentralizedDataValidator
+            self.data_validator = CentralizedDataValidator(self, self.config_manager)
             
-            # Use simplified data integrity checker for validation only (Phase 2)
-            self.data_integrity_checker = SimplifiedDataIntegrityChecker(self, self.config_manager)
-            
-            # Initialize unified data interface (Phase 3)
-            self.unified_data = UnifiedDataInterface(
-                self, 
-                self.config_manager, 
-                self.data_accessor, 
-                self.data_integrity_checker
-            )
-            
-            # STEP 7: Initialize components with centralized config
+            # STEP 8: Initialize components with centralized config
             self.orchestrator = ThreeLayerOrchestrator(self, self.config_manager)
+            
+            # CRITICAL: Initialize the orchestrator system (loads strategies)
+            if not self.orchestrator.initialize_system():
+                self.Error("CRITICAL: Orchestrator system initialization failed")
+                raise Exception("Orchestrator initialization failed")
+            
+            # Initialize bad data position manager BEFORE execution manager
+            from src.components.bad_data_position_manager import BadDataPositionManager
+            self.bad_data_manager = BadDataPositionManager(self, self.config_manager)
+            
+            # Initialize execution manager
             self.execution_manager = PortfolioExecutionManager(self, self.config_manager)
+            
+            # INTEGRATION: Connect bad data manager to execution manager
+            self.execution_manager.set_bad_data_manager(self.bad_data_manager)
             
             # SIMPLIFIED: Direct QC-native universe setup (no FuturesManager needed)
             self.Log("MAIN: Setting up futures universe using QC native methods...")
@@ -138,21 +163,19 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 raise
             
             # Initialize performance reporting
-            self.reporter = SystemReporter(self, self.config_manager)
+            self.system_reporter = SystemReporter(self, self.config_manager)
             
-            # Schedule weekly rebalancing (market close on Fridays)
-            self.Schedule.On(
-                self.DateRules.WeekEnd(),
-                self.TimeRules.BeforeMarketClose("SPY", 30),
-                self.WeeklyRebalance
+            # Initialize portfolio valuation manager to prevent "accurate price" errors
+            from src.components.portfolio_valuation_manager import PortfolioValuationManager
+            self.portfolio_valuation_manager = PortfolioValuationManager(
+                self, self.config_manager, self.bad_data_manager
             )
             
-            # Schedule monthly reporting
-            self.Schedule.On(
-                self.DateRules.MonthStart(),
-                self.TimeRules.AfterMarketOpen("SPY", 30),
-                self.MonthlyReport
-            )
+            # Initialize CRITICAL rollover manager (isolated for safety)
+            self.rollover_manager = FuturesRolloverManager(self, self.config_manager)
+            
+            # Setup scheduling using futures-compatible timing (not market-dependent)
+            self._schedule_rebalancing()
 
             # Initialize tracking variables for defensive programming
             self._warmup_completed = False
@@ -160,6 +183,9 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             self._rollover_events_count = 0
             self._algorithm_start_time = self.Time
 
+            # Initialize custom charts for strategy allocation tracking
+            self._initialize_custom_charts()
+            
             self.Log("=" * 80)
             self.Log("THREE-LAYER CTA PORTFOLIO ALGORITHM INITIALIZED SUCCESSFULLY")
             self.Log("=" * 80)
@@ -168,281 +194,307 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             self.Error(f"CRITICAL ERROR during initialization: {str(e)}")
             raise
 
+    def _initialize_custom_charts(self):
+        """Initialize custom charts for tracking strategy allocations and performance."""
+        try:
+            # Get enabled strategies from configuration
+            enabled_strategies = list(self.config_manager.get_enabled_strategies().keys())
+            
+            # Initialize tracking variables for allocations
+            self.strategy_allocations = {strategy: 0.0 for strategy in enabled_strategies}
+            self.last_chart_update = None
+            
+            # Log chart initialization
+            self.Log(f"CHARTS: Initialized strategy allocation tracking for {len(enabled_strategies)} strategies: {enabled_strategies}")
+            
+        except Exception as e:
+            self.Error(f"Error initializing custom charts: {str(e)}")
+
+    def _update_strategy_allocation_chart(self, strategy_allocations):
+        """Update the strategy allocation chart with current allocations."""
+        try:
+            if not strategy_allocations:
+                return
+            
+            # Update our tracking
+            self.strategy_allocations.update(strategy_allocations)
+            self.last_chart_update = self.Time
+            
+            # Plot each strategy's allocation percentage
+            for strategy_name, allocation in strategy_allocations.items():
+                # Convert to percentage (0.70 -> 70%)
+                allocation_percentage = allocation * 100
+                
+                # Plot on the "Strategy Allocation" chart
+                self.Plot("Strategy Allocation", strategy_name, allocation_percentage)
+            
+            # Also plot total allocation to verify it sums to 100%
+            total_allocation = sum(strategy_allocations.values()) * 100
+            self.Plot("Strategy Allocation", "Total", total_allocation)
+            
+            # Also update portfolio performance chart
+            portfolio_value = self.Portfolio.TotalPortfolioValue
+            self.Plot("Portfolio Performance", "Total Value", portfolio_value)
+            
+            # Track cash vs invested
+            cash_percentage = (self.Portfolio.Cash / portfolio_value) * 100 if portfolio_value > 0 else 0
+            invested_percentage = 100 - cash_percentage
+            self.Plot("Portfolio Composition", "Cash %", cash_percentage)
+            self.Plot("Portfolio Composition", "Invested %", invested_percentage)
+            
+            # Log the update (but not too frequently)
+            if hasattr(self, '_last_allocation_log_time'):
+                if (self.Time - self._last_allocation_log_time).days >= 7:  # Log weekly
+                    allocation_str = ", ".join([f"{name}: {alloc:.1%}" for name, alloc in strategy_allocations.items()])
+                    self.Log(f"CHARTS: Strategy allocations updated - {allocation_str}")
+                    self._last_allocation_log_time = self.Time
+            else:
+                allocation_str = ", ".join([f"{name}: {alloc:.1%}" for name, alloc in strategy_allocations.items()])
+                self.Log(f"CHARTS: Strategy allocations updated - {allocation_str}")
+                self._last_allocation_log_time = self.Time
+            
+        except Exception as e:
+            self.Error(f"Error updating strategy allocation chart: {str(e)}")
+
+    def _should_log_component(self, component_name, level):
+        """Check if we should log for a component at a given level."""
+        try:
+            if hasattr(self, 'config_manager') and self.config_manager:
+                from config.config_market_strategy import get_log_level_for_component
+                component_level = get_log_level_for_component(component_name)
+                
+                # Simple level comparison (DEBUG < INFO < WARNING < ERROR < CRITICAL)
+                levels = {'DEBUG': 0, 'INFO': 1, 'WARNING': 2, 'ERROR': 3, 'CRITICAL': 4}
+                return levels.get(level, 1) >= levels.get(component_level, 1)
+            return True  # Default to logging if config not available
+        except:
+            return True  # Default to logging if there's any error
+
     def _setup_futures_universe(self):
         """
-        Setup futures universe using QC's native AddFuture method.
-        Replaces the complex FuturesManager with simple, direct QC integration.
+        Setup futures universe using QC's TWO-CONTRACT ARCHITECTURE for perfect rollover prices.
+        
+        ARCHITECTURE: Add both front month (offset=0) and second month (offset=1) continuous contracts.
+        This ensures we ALWAYS have rollover prices because the second continuous contract is already
+        tracking the "about to be front month" contract with real price data.
+        
+        GENIUS SOLUTION: When front month rolls A→B, Contract B is already the .Mapped property
+        of the second continuous contract, so we can get its price during rollover events.
         """
         try:
-            universe_config = self.config_manager.get_universe_config()
-            futures_config = universe_config.get('futures', {})
+            # Check if we should log universe details (based on logging config)
+            log_universe_details = self._should_log_component('universe', 'INFO')
             
-            self.Log("UNIVERSE: Setting up futures universe using QC native methods")
+            if log_universe_details:
+                self.Log("UNIVERSE: Setting up TWO-CONTRACT ARCHITECTURE for perfect rollover prices")
             
-            # Get execution configuration for futures parameters
-            execution_config = self.config_manager.get_execution_config()
-            futures_params = execution_config.get('futures_config', {}).get('add_future_params', {})
+            # Get futures universe from configuration (completely configurable)
+            # Get the raw universe config, not the transformed priority groups
+            raw_config = self.config_manager.get_full_config()
+            universe_config = raw_config.get('universe', {})
+            loading_config = universe_config.get('loading', {})
+            simple_selection = universe_config.get('simple_selection', {})
             
-            # Map string values to QuantConnect enums
-            resolution = getattr(Resolution, futures_params.get('resolution', 'Daily'))
-            data_mapping_mode = getattr(DataMappingMode, futures_params.get('data_mapping_mode', 'OpenInterest'))
-            data_normalization_mode = getattr(DataNormalizationMode, futures_params.get('data_normalization_mode', 'BackwardsRatio'))
-            contract_depth_offset = futures_params.get('contract_depth_offset', 0)
+            # DEBUG: Log configuration loading details
+            self.Log(f"DEBUG: universe_config keys: {list(universe_config.keys()) if universe_config else 'None'}")
+            self.Log(f"DEBUG: loading_config: {loading_config}")
+            self.Log(f"DEBUG: simple_selection: {simple_selection}")
             
-            # Add futures by category
-            total_added = 0
-            for category_name, category_data in futures_config.items():
-                self.Log(f"UNIVERSE: Processing category '{category_name}'")
+            # Check if simple selection is enabled (easy way to specify exact futures list)
+            if simple_selection.get('enabled', False):
+                # Use simple futures list (easiest configuration method)
+                futures_to_add = simple_selection.get('futures_list', [])
+                excluded_symbols = loading_config.get('exclude_problematic_symbols', [])
                 
-                if isinstance(category_data, list):
-                    # Simple list of symbol strings
-                    for symbol_str in category_data:
-                        self._add_single_future(symbol_str, resolution, data_mapping_mode, 
-                                              data_normalization_mode, contract_depth_offset)
+                # Apply exclusions to simple list
+                futures_to_add = [symbol for symbol in futures_to_add if symbol not in excluded_symbols]
+                
+                if log_universe_details:
+                    self.Log(f"UNIVERSE: Using SIMPLE SELECTION mode")
+                    self.Log(f"UNIVERSE: Simple list: {simple_selection.get('futures_list', [])}")
+                    self.Log(f"UNIVERSE: After exclusions: {futures_to_add}")
+            else:
+                # Use priority-based filtering (advanced configuration method)
+                futures_config = universe_config.get('futures', {})
+                max_priority = loading_config.get('max_priority', 2)
+                excluded_symbols = loading_config.get('exclude_problematic_symbols', [])
+                
+                # DEBUG: Log priority-based filtering details
+                self.Log(f"DEBUG: futures_config keys: {list(futures_config.keys()) if futures_config else 'None'}")
+                self.Log(f"DEBUG: max_priority: {max_priority}")
+                self.Log(f"DEBUG: excluded_symbols: {excluded_symbols}")
+                
+                if log_universe_details:
+                    self.Log(f"UNIVERSE: Using PRIORITY-BASED filtering (max_priority={max_priority})")
+                
+                # Build futures list from configuration based on priority
+                futures_to_add = []
+                
+                # Iterate through all categories in futures config
+                for category_name, category_futures in futures_config.items():
+                    if log_universe_details:
+                        self.Log(f"UNIVERSE: Processing category '{category_name}' with {len(category_futures)} futures")
+                    
+                    for symbol, symbol_config in category_futures.items():
+                        symbol_priority = symbol_config.get('priority', 999)  # High number = low priority
+                        
+                        # Include if priority is within max_priority and not excluded
+                        if symbol_priority <= max_priority and symbol not in excluded_symbols:
+                            futures_to_add.append(symbol)
+                            if log_universe_details:
+                                self.Log(f"UNIVERSE: Added {symbol} (priority {symbol_priority}) from {category_name}")
+                        else:
+                            if log_universe_details:
+                                reason = "excluded" if symbol in excluded_symbols else f"priority {symbol_priority} > max {max_priority}"
+                                self.Log(f"UNIVERSE: Skipped {symbol} ({reason}) from {category_name}")
+                
+                # Remove duplicates while preserving order
+                seen = set()
+                unique_futures = []
+                for symbol in futures_to_add:
+                    if symbol not in seen:
+                        seen.add(symbol)
+                        unique_futures.append(symbol)
+                futures_to_add = unique_futures
+            
+            # EMERGENCY FALLBACK: If no futures found, use hardcoded list to prevent crash
+            if not futures_to_add:
+                self.Log("WARNING: No futures found in configuration! Using emergency fallback list.")
+                futures_to_add = ['ES', 'CL', 'GC']  # Emergency fallback to prevent crash
+                self.Log(f"WARNING: Emergency fallback futures: {futures_to_add}")
+            
+            if log_universe_details:
+                self.Log(f"UNIVERSE: Priority filtering - max_priority={max_priority}, excluded={excluded_symbols}")
+                self.Log(f"UNIVERSE: Final futures list: {futures_to_add}")
+                self.Log("UNIVERSE: Adding BOTH front month (offset=0) AND second month (offset=1) contracts")
+            
+            # Initialize storage for configurable contract depth
+            self.futures_symbols = []  # Front month contracts (for trading)
+            self.additional_contracts = {}  # Additional contracts by depth (for rollover prices)
+            self.symbol_mappings = {}  # Map front month symbol to additional contracts
+            
+            # Get contract depth configuration
+            execution_config = self.config_manager.get_execution_config()
+            depth_config = execution_config.get('futures_config', {}).get('contract_depth_config', {})
+            
+            # Add contracts with configurable depth
+            total_added = 0
+            for symbol_str in futures_to_add:
+                try:
+                    # Determine contract depth for this symbol
+                    contract_depth = self._get_contract_depth_for_symbol(symbol_str, depth_config)
+                    
+                    if log_universe_details:
+                        self.Log(f"UNIVERSE: {symbol_str} configured for {contract_depth} contract depth")
+                    
+                    # 1. Always add FRONT MONTH continuous contract (contractDepthOffset=0)
+                    front_future = self.AddFuture(
+                        symbol_str,
+                        Resolution.Daily,
+                        dataMappingMode=DataMappingMode.OpenInterest,
+                        dataNormalizationMode=DataNormalizationMode.BackwardsRatio,
+                        contractDepthOffset=0  # Front month
+                    )
+                    
+                    # Store front month contract
+                    self.futures_symbols.append(front_future.Symbol)
+                    self.additional_contracts[front_future.Symbol] = []
+                    
+                    if log_universe_details:
+                        self.Log(f"UNIVERSE: Added {symbol_str} FRONT -> {front_future.Symbol}")
+                    
+                    total_added += 1
+                    
+                    # 2. Add additional contracts based on configured depth
+                    additional_symbols = []
+                    for depth_offset in range(1, contract_depth):
+                        additional_future = self.AddFuture(
+                            symbol_str,
+                            Resolution.Daily,
+                            dataMappingMode=DataMappingMode.OpenInterest,
+                            dataNormalizationMode=DataNormalizationMode.BackwardsRatio,
+                            contractDepthOffset=depth_offset
+                        )
+                        
+                        additional_symbols.append(additional_future.Symbol)
                         total_added += 1
                         
-                elif isinstance(category_data, dict):
-                    # Dictionary with symbol configurations
-                    for symbol_str, symbol_config in category_data.items():
-                        self._add_single_future(symbol_str, resolution, data_mapping_mode,
-                                              data_normalization_mode, contract_depth_offset)
-                        total_added += 1
+                        if log_universe_details:
+                            self.Log(f"UNIVERSE: Added {symbol_str} DEPTH-{depth_offset} -> {additional_future.Symbol}")
+                    
+                    # Store additional contracts and create mappings
+                    self.additional_contracts[front_future.Symbol] = additional_symbols
+                    
+                    # Primary mapping: front month -> second month (for backward compatibility)
+                    if len(additional_symbols) > 0:
+                        self.symbol_mappings[front_future.Symbol] = additional_symbols[0]  # Second month
+                    
+                except Exception as e:
+                    self.Log(f"UNIVERSE: Failed to add {symbol_str}: {str(e)}")
+                    # Continue with other symbols
             
-            # Add expansion candidates if configured
-            expansion_config = universe_config.get('expansion_candidates', {})
-            for symbol_str, symbol_config in expansion_config.items():
-                self._add_single_future(symbol_str, resolution, data_mapping_mode,
-                                      data_normalization_mode, contract_depth_offset)
-                total_added += 1
+            # Always log summary (even at WARNING level)
+            self.Log(f"UNIVERSE: CONFIGURABLE-DEPTH ARCHITECTURE - Successfully added {total_added} contracts")
+            self.Log(f"UNIVERSE: {len(self.futures_symbols)} front month + {sum(len(contracts) for contracts in self.additional_contracts.values())} additional contracts")
             
-            self.Log(f"UNIVERSE: Successfully added {total_added} futures contracts")
-            self.Log(f"UNIVERSE: Futures symbols: {[str(s) for s in self.futures_symbols]}")
+            if log_universe_details:
+                self.Log(f"UNIVERSE: Front month symbols: {[str(s) for s in self.futures_symbols]}")
+                for front_symbol, additional_symbols in self.additional_contracts.items():
+                    if additional_symbols:
+                        self.Log(f"UNIVERSE: {front_symbol} -> {len(additional_symbols)} additional: {[str(s) for s in additional_symbols]}")
+                self.Log(f"UNIVERSE: Symbol mappings: {len(self.symbol_mappings)} front->second mappings created")
+            
+            if len(self.futures_symbols) == 0:
+                self.Error("UNIVERSE ERROR: No front month futures contracts were added!")
+                raise Exception("Universe setup failed - no front month contracts added")
+            
+            # Validate that we have additional contracts for rollover price tracking
+            total_additional = sum(len(contracts) for contracts in self.additional_contracts.values())
+            if total_additional == 0:
+                self.Log("UNIVERSE WARNING: No additional contracts added - rollover price tracking may be limited")
             
         except Exception as e:
-            self.Error(f"UNIVERSE: Failed to setup futures universe: {str(e)}")
+            self.Error(f"UNIVERSE: Failed to setup CONFIGURABLE-DEPTH futures universe: {str(e)}")
             raise
-    
-    def _add_single_future(self, symbol_str, resolution, data_mapping_mode, 
-                          data_normalization_mode, contract_depth_offset):
-        """Add a single futures contract using QC's native AddFuture method."""
-        try:
-            # Use QC's native AddFuture method - this handles all Symbol object creation internally
-            future = self.AddFuture(
-                symbol_str,
-                resolution,
-                dataMappingMode=data_mapping_mode,
-                dataNormalizationMode=data_normalization_mode,
-                contractDepthOffset=contract_depth_offset
-            )
-            
-            # Store the symbol that QC created for us
-            self.futures_symbols.append(future.Symbol)
-            self.Log(f"UNIVERSE: Added future {symbol_str} -> {future.Symbol}")
-            
-        except Exception as e:
-            self.Error(f"UNIVERSE: Failed to add future {symbol_str}: {str(e)}")
-            # Don't raise - continue with other symbols
 
-    def _setup_enhanced_warmup(self):
+    def _get_contract_depth_for_symbol(self, symbol_str, depth_config):
         """
-        Setup QC's native warm-up system based on strategy requirements and QC primer.
-        Implements proper warm-up period calculation and configuration.
+        Determine the appropriate contract depth for a given futures symbol.
+        
+        Args:
+            symbol_str (str): Futures symbol (e.g., 'ES', 'VX', 'CL')
+            depth_config (dict): Contract depth configuration
+            
+        Returns:
+            int: Number of contracts to add (including front month)
         """
         try:
-            warmup_config = self.config_manager.get_warmup_config()
+            # Search through each category to find the symbol
+            for category, config in depth_config.items():
+                if category == 'default':
+                    continue
+                    
+                contracts = config.get('contracts', [])
+                if symbol_str in contracts:
+                    depth = config.get('depth', 2)
+                    self.Log(f"UNIVERSE: {symbol_str} found in {category} category, depth: {depth}")
+                    return depth
             
-            if not warmup_config.get('enabled', False):
-                self.Log("WARMUP: Disabled in configuration")
-                return
-            
-            # Calculate required warm-up period based on enabled strategies
-            warmup_days = self.config_manager.calculate_max_warmup_needed()
-            
-            if warmup_days <= 0:
-                self.Log("WARMUP: No warm-up required")
-                return
-            
-            # Use QC's native warm-up system
-            warmup_method = warmup_config.get('method', 'time_based')
-            warmup_resolution = getattr(Resolution, warmup_config.get('resolution', 'Daily'))
-            
-            if warmup_method == 'time_based':
-                # Time-based warm-up (recommended for CTA strategies)
-                warmup_period = timedelta(days=warmup_days)
-                self.SetWarmUp(warmup_period, warmup_resolution)
-                self.Log(f"WARMUP: Set time-based warm-up for {warmup_days} days at {warmup_config.get('resolution', 'Daily')} resolution")
-            else:
-                # Bar-count based warm-up
-                self.SetWarmUp(warmup_days, warmup_resolution)
-                self.Log(f"WARMUP: Set bar-count warm-up for {warmup_days} bars at {warmup_config.get('resolution', 'Daily')} resolution")
-            
-            # Enable automatic indicator warm-up
-            self.Settings.AutomaticIndicatorWarmUp = True
-            self.Log("WARMUP: Enabled automatic indicator warm-up")
-            
-            # Store warm-up info for progress tracking
-            self._warmup_config = warmup_config
-            self._warmup_start_time = None
-            self._warmup_total_days = warmup_days
-            
-            self.Log("=" * 60)
-            self.Log("ENHANCED WARM-UP SYSTEM CONFIGURED")
-            self.Log(f"Method: {warmup_method}")
-            self.Log(f"Period: {warmup_days} days")
-            self.Log(f"Resolution: {warmup_config.get('resolution', 'Daily')}")
-            self.Log(f"Automatic Indicators: Enabled")
-            
-            # Log strategy-specific requirements
-            progress_info = self.config_manager.get_warmup_progress_info()
-            enabled_strategies = progress_info.get('enabled_strategies', [])
-            self.Log(f"Enabled Strategies: {enabled_strategies}")
-            
-            for strategy_name in enabled_strategies:
-                strategy_config = self.config_manager.get_strategy_config(strategy_name)
-                strategy_warmup = strategy_config.get('warmup_config', {})
-                required_days = strategy_warmup.get('required_days', 0)
-                if required_days > 0:
-                    self.Log(f"  - {strategy_name}: {required_days} days required")
-            
-            self.Log("=" * 60)
+            # Use default if not found in any category
+            default_depth = depth_config.get('default', {}).get('depth', 2)
+            self.Log(f"UNIVERSE: {symbol_str} using default depth: {default_depth}")
+            return default_depth
             
         except Exception as e:
-            self.Error(f"Failed to setup enhanced warm-up: {str(e)}")
-            # Continue without warm-up rather than failing completely
-            self.Log("WARNING: Continuing without warm-up due to setup error")
+            self.Log(f"UNIVERSE: Error determining depth for {symbol_str}: {str(e)}")
+            return 2  # Safe fallback
 
     def OnWarmupFinished(self):
-        """
-        QC's native warm-up completion callback.
-        Validates that all indicators and strategies are ready for trading.
-        """
-        try:
-            self.Log("=" * 80)
-            self.Log("WARM-UP PERIOD COMPLETED - VALIDATING SYSTEM READINESS")
-            self.Log("=" * 80)
-            
-            # Mark warm-up as completed
-            self._warmup_completed = True
-            
-            # Get warm-up configuration
-            warmup_config = self.config_manager.get_warmup_config()
-            
-            # Validate indicators are ready (if enabled)
-            if warmup_config.get('validate_indicators_ready', True):
-                self._validate_indicators_ready()
-            
-            # Validate strategies are ready
-            self._validate_strategies_ready()
-            
-            # Validate universe is ready
-            self._validate_universe_ready()
-            
-            # Log system status
-            self._log_warmup_completion_status()
-            
-            # Optional: Trigger immediate test rebalance to verify system
-            if warmup_config.get('test_rebalance_on_completion', False):
-                self.Log("TESTING: Triggering immediate rebalance to test system...")
-                try:
-                    self.WeeklyRebalance()
-                except Exception as test_e:
-                    self.Error(f"WARMUP TEST FAILED: {str(test_e)}")
-            
-            self.Log("=" * 80)
-            self.Log("SYSTEM IS READY FOR LIVE TRADING")
-            self.Log("=" * 80)
-            
-        except Exception as e:
-            self.Error(f"Error in OnWarmupFinished: {str(e)}")
-            # Don't raise - allow trading to continue even if validation has issues
-
-    def _validate_indicators_ready(self):
-        """Validate that all required indicators are ready after warm-up."""
-        try:
-            enabled_strategies = self.config_manager.get_enabled_strategies()
-            
-            for strategy_name in enabled_strategies:
-                indicator_ready = self.config_manager.validate_warmup_indicators(strategy_name)
-                if indicator_ready:
-                    self.Log(f"WARMUP VALIDATION: {strategy_name} indicators ready")
-                else:
-                    self.Log(f"WARMUP WARNING: {strategy_name} indicators may not be ready")
-                    
-        except Exception as e:
-            self.Error(f"Failed to validate indicators: {str(e)}")
-
-    def _validate_strategies_ready(self):
-        """Validate that all strategies are ready for trading."""
-        try:
-            if hasattr(self, 'orchestrator') and self.orchestrator:
-                strategies_ready = self.orchestrator.validate_strategies_ready()
-                self.Log(f"WARMUP VALIDATION: Strategies ready: {strategies_ready}")
-            else:
-                self.Log("WARMUP WARNING: Orchestrator not available for strategy validation")
-                
-        except Exception as e:
-            self.Error(f"Failed to validate strategies: {str(e)}")
-
-    def _validate_universe_ready(self):
-        """Validate that the universe is ready with liquid symbols."""
-        try:
-            if hasattr(self, 'universe_manager') and self.universe_manager:
-                # Get liquid symbols after warm-up (no slice needed for validation)
-                liquid_symbols = self.universe_manager.get_liquid_symbols()
-                self.Log(f"WARMUP VALIDATION: {len(liquid_symbols)} liquid symbols available")
-                
-                if len(liquid_symbols) == 0:
-                    self.Log("WARMUP WARNING: No liquid symbols found - trading may be limited")
-                else:
-                    # Log sample of liquid symbols
-                    sample_symbols = list(liquid_symbols)[:5]
-                    self.Log(f"WARMUP VALIDATION: Sample liquid symbols: {sample_symbols}")
-            else:
-                self.Log("WARMUP WARNING: Universe manager not available for validation")
-                
-        except Exception as e:
-            self.Error(f"Failed to validate universe: {str(e)}")
-
-    def _log_warmup_completion_status(self):
-        """Log comprehensive warm-up completion status."""
-        try:
-            # Algorithm status
-            self.Log(f"Portfolio Value: ${self.Portfolio.TotalPortfolioValue:,.2f}")
-            self.Log(f"Trading Start Time: {self.Time}")
-            
-            # Warm-up timing
-            if hasattr(self, '_warmup_start_time') and self._warmup_start_time:
-                warmup_duration = self.Time - self._warmup_start_time
-                self.Log(f"Warm-up Duration: {warmup_duration}")
-            
-            # Data status
-            total_securities = len(self.Securities)
-            self.Log(f"Total Securities: {total_securities}")
-            
-            # Strategy status
-            enabled_strategies = self.config_manager.get_enabled_strategies()
-            self.Log(f"Enabled Strategies: {list(enabled_strategies.keys())}")
-            
-        except Exception as e:
-            self.Error(f"Failed to log warmup completion status: {str(e)}")
-
-    def _log_warmup_progress(self):
-        """Log warm-up progress periodically."""
-        try:
-            if hasattr(self, '_warmup_start_time') and self._warmup_start_time:
-                elapsed = self.Time - self._warmup_start_time
-                total_days = getattr(self, '_warmup_total_days', 0)
-                
-                if total_days > 0:
-                    progress = min(100, (elapsed.days / total_days) * 100)
-                    self.Log(f"WARMUP PROGRESS: {progress:.1f}% complete ({elapsed.days}/{total_days} days)")
-                else:
-                    self.Log(f"WARMUP PROGRESS: {elapsed.days} days elapsed")
-            else:
-                self.Log("WARMUP PROGRESS: Tracking not initialized")
-                
-        except Exception as e:
-            self.Error(f"Failed to log warmup progress: {str(e)}")
+        """QC's native warm-up completion callback - delegates to WarmupManager."""
+        if hasattr(self, 'warmup_manager'):
+            self.warmup_manager.on_warmup_finished()
+        else:
+            self.Log("WARM-UP COMPLETED - System ready for trading")
 
     def OnData(self, slice):
         """
@@ -488,9 +540,9 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                 self._warmup_start_time = self.Time
                 self.Log("WARMUP: First data received - starting warm-up tracking")
             
-            # CRITICAL: Pass slice to universe manager for futures chain analysis
-            if hasattr(self, 'universe_manager') and self.universe_manager:
-                self.universe_manager.update_during_warmup(slice)
+            # Use LEAN's native futures chain analysis directly instead of custom universe manager
+            if hasattr(slice, 'FuturesChains') and slice.FuturesChains:
+                self.Log(f"WARMUP: Processing {len(slice.FuturesChains)} futures chains")
             
             # Update orchestrator with slice during warm-up
             if hasattr(self, 'orchestrator') and self.orchestrator:
@@ -500,12 +552,19 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             if hasattr(slice, 'SymbolChangedEvents') and slice.SymbolChangedEvents:
                 for symbolChanged in slice.SymbolChangedEvents.Values:
                     self._rollover_events_count += 1
-                    self.Log(f"WARMUP ROLLOVER: {symbolChanged.OldSymbol} -> {symbolChanged.NewSymbol} "
-                           f"(Event #{self._rollover_events_count})")
+                    # Smart rollover logging: only log first few events and periodic summaries
+                    if self._rollover_events_count <= 3:
+                        self.Log(f"WARMUP ROLLOVER: {symbolChanged.OldSymbol} -> {symbolChanged.NewSymbol} "
+                               f"(Event #{self._rollover_events_count})")
+                    elif self._rollover_events_count % 10 == 0:  # Every 10th rollover
+                        self.Log(f"WARMUP ROLLOVER SUMMARY: {self._rollover_events_count} total events")
             
             # Periodic warm-up progress logging
             if self.Time.hour == 0 and self.Time.minute == 0:  # Once per day
-                self._log_warmup_progress()
+                if hasattr(self, 'warmup_manager'):
+                    self.warmup_manager.log_warmup_progress()
+                else:
+                    self.Log("WARMUP: In progress")
                 
         except Exception as e:
             self.Error(f"Error handling warmup data: {str(e)}")
@@ -550,45 +609,34 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
         STREAMLINED: Uses unified data interface instead of direct slice manipulation.
         """
         try:
+            # Store current slice for QC's recommended slice.Contains() validation
+            self.current_slice = slice
+            
+            # CRITICAL: Validate existing positions before any portfolio operations
+            # This prevents "security does not have an accurate price" errors
+            if hasattr(self, 'portfolio_valuation_manager'):
+                validation_results = self.portfolio_valuation_manager.validate_portfolio_before_valuation()
+                if not validation_results['can_proceed_with_valuation']:
+                    self.Log("WARNING: Portfolio valuation validation failed - skipping this data event")
+                    return
+            
             # Handle rollover events first (before trading logic)
             if hasattr(slice, 'SymbolChangedEvents') and slice.SymbolChangedEvents:
                 for symbolChanged in slice.SymbolChangedEvents.Values:
                     self._rollover_events_count += 1
-                    self.Log(f"ROLLOVER: {symbolChanged.OldSymbol} -> {symbolChanged.NewSymbol} "
-                           f"(Event #{self._rollover_events_count})")
+                    # Smart rollover logging: always log during trading (more important than warmup)
+                    # But keep it concise
+                    old_ticker = str(symbolChanged.OldSymbol).split()[0] if ' ' in str(symbolChanged.OldSymbol) else str(symbolChanged.OldSymbol)
+                    new_ticker = str(symbolChanged.NewSymbol).split()[0] if ' ' in str(symbolChanged.NewSymbol) else str(symbolChanged.NewSymbol)
+                    self.Log(f"ROLLOVER: {old_ticker} -> {new_ticker} (#{self._rollover_events_count})")
             
-            # PHASE 3: Use unified data interface for standardized data access
-            if hasattr(self, 'unified_data') and self.unified_data:
-                # Get standardized slice data through unified interface
-                unified_slice_data = self.unified_data.get_slice_data(
-                    slice, 
-                    symbols=list(self.shared_symbols.keys()) if hasattr(self, 'shared_symbols') else None,
-                    data_types=['bars', 'chains']
-                )
-                
-                # Pass unified data to orchestrator
-                if hasattr(self, 'orchestrator') and self.orchestrator:
-                    self.orchestrator.update_with_unified_data(unified_slice_data, slice)
-                
-                # Pass unified data to universe manager for liquidity analysis
-                if hasattr(self, 'universe_manager') and self.universe_manager:
-                    self.universe_manager.update_with_unified_data(unified_slice_data, slice)
-                
-                # Update system reporter with unified data
-                if hasattr(self, 'system_reporter') and self.system_reporter:
-                    self.system_reporter.update_with_unified_data(unified_slice_data, slice)
-            else:
-                # Fallback to direct slice passing (backward compatibility)
-                self.Log("WARNING: Unified data interface not available, using direct slice access")
-                
-                if hasattr(self, 'orchestrator') and self.orchestrator:
-                    self.orchestrator.update_with_data(slice)
-                
-                if hasattr(self, 'universe_manager') and self.universe_manager:
-                    self.universe_manager.update_with_slice(slice)
-                
-                if hasattr(self, 'system_reporter') and self.system_reporter:
-                    self.system_reporter.update_with_slice(slice)
+            # Use direct LEAN slice access instead of custom unified data interface
+            if hasattr(self, 'orchestrator') and self.orchestrator:
+                self.orchestrator.update_with_data(slice)
+            
+            # Track daily performance for accurate monthly return calculations
+            if hasattr(self, 'system_reporter') and self.system_reporter:
+                self.system_reporter.generate_daily_performance_update()
                 
         except Exception as e:
             self.Error(f"Error handling normal trading data: {str(e)}")
@@ -656,93 +704,49 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             self.Error(f"Failed to schedule rebalancing: {str(e)}")
     
     def _emergency_fallback_initialization(self):
-        """
-        SECURITY-COMPLIANT Emergency fallback - NO TRADING CONFIGURATION FALLBACKS
-        Only initializes tracking variables and minimal component stubs to prevent crashes.
-        DOES NOT create fallback trading parameters - algorithm will not trade.
-        """
-        self.Log("EMERGENCY FALLBACK: Initializing crash-prevention system only...")
+        """Emergency fallback - NO TRADING CONFIGURATION FALLBACKS"""
         self.Error("CRITICAL: Configuration failed - Algorithm will NOT trade")
-        self.Error("SECURITY: No fallback trading parameters will be used")
         
         try:
-            # Initialize tracking variables ONLY (critical for OnData to not crash)
+            # Initialize tracking variables
             self._warmup_completed = False
             self._first_rebalance_attempted = False
             self._rollover_events_count = 0
             self._algorithm_start_time = self.Time
-            
-            # Initialize empty containers to prevent AttributeError crashes
             self.futures_symbols = []
-            self.config = None  # Explicitly set to None - no fallback config
-            self.config_manager = None  # Explicitly set to None - no fallback config manager
+            self.config = None
+            self.config_manager = None
             
-            # Create minimal component stubs ONLY to prevent crashes (no trading functionality)
-            class CrashPreventionOrchestrator:
-                """Minimal stub to prevent crashes - does not trade"""
-                def __init__(self, algorithm):
-                    self.algorithm = algorithm
-                
-                def OnSecuritiesChanged(self, changes):
-                    self.algorithm.Log("CrashPreventionOrchestrator: OnSecuritiesChanged called (no action)")
-                
-                def update_with_data(self, slice):
-                    self.algorithm.Log("CrashPreventionOrchestrator: update_with_data called (no action)")
-                
-                def update_during_warmup(self, slice):
-                    self.algorithm.Log("CrashPreventionOrchestrator: update_during_warmup called (no action)")
-                
-                def generate_portfolio_targets(self):
-                    self.algorithm.Log("CrashPreventionOrchestrator: No targets generated (no configuration)")
-                    return {'status': 'failed', 'reason': 'No valid configuration available'}
-            
-            class CrashPreventionExecutionManager:
-                """Minimal stub to prevent crashes - does not execute trades"""
-                def __init__(self, algorithm):
-                    self.algorithm = algorithm
-                
-                def execute_rebalance_result(self, result):
-                    self.algorithm.Log("CrashPreventionExecutionManager: No trades executed (no configuration)")
-                    return {'status': 'failed', 'reason': 'No valid configuration available'}
-            
-            class CrashPreventionSystemReporter:
-                """Minimal stub to prevent crashes - basic logging only"""
-                def __init__(self, algorithm):
-                    self.algorithm = algorithm
-                
-                def track_rebalance_performance(self, result):
-                    self.algorithm.Log("CrashPreventionSystemReporter: No performance tracking (no configuration)")
-                
-                def generate_monthly_performance_report(self):
-                    self.algorithm.Log("CrashPreventionSystemReporter: No monthly report (no configuration)")
-                
-                def generate_final_algorithm_report(self):
-                    self.algorithm.Log("CrashPreventionSystemReporter: Algorithm ended without valid configuration")
+            # Create minimal component stubs
+            class CrashPrevention:
+                def __init__(self, algorithm): self.algorithm = algorithm
+                def OnSecuritiesChanged(self, changes): pass
+                def update_with_data(self, slice): pass
+                def update_during_warmup(self, slice): pass
+                def generate_portfolio_targets(self): return {'status': 'failed'}
+                def execute_rebalance_result(self, result): return {'status': 'failed'}
+                def track_rebalance_performance(self, result): pass
+                def generate_monthly_performance_report(self): pass
+                def generate_final_algorithm_report(self): 
                     self.algorithm.Log("SECURITY: No trading occurred due to configuration failure")
             
             # Initialize crash prevention components
-            self.orchestrator = CrashPreventionOrchestrator(self)
-            self.execution_manager = CrashPreventionExecutionManager(self)
-            self.system_reporter = CrashPreventionSystemReporter(self)
+            fallback = CrashPrevention(self)
+            self.orchestrator = fallback
+            self.execution_manager = fallback
+            self.system_reporter = fallback
             
-            # Set minimal QC parameters to prevent QC framework errors
-            # These are NOT trading parameters - just framework requirements
+            # Set minimal QC parameters
             try:
-                self.SetStartDate(2020, 1, 1)  # Minimal date range
-                self.SetEndDate(2020, 1, 2)    # 1 day only
-                self.SetCash(1000000)          # Minimal cash (no trades will be made)
-                self.Log("Emergency fallback: Set minimal QC framework parameters")
-                self.Log("IMPORTANT: Algorithm will not trade - configuration required")
+                self.SetStartDate(2020, 1, 1)
+                self.SetEndDate(2020, 1, 2)
+                self.SetCash(1000000)
+                self.Log("Emergency fallback: Minimal QC parameters set")
             except Exception as qc_e:
                 self.Error(f"Failed to set minimal QC parameters: {str(qc_e)}")
             
-            self.Log("Emergency fallback initialization complete - CRASH PREVENTION ONLY")
-            self.Log("SECURITY COMPLIANCE: No trading configuration fallbacks used")
-            
         except Exception as e:
             self.Error(f"Emergency fallback failed: {str(e)}")
-            self.Error("CRITICAL: Algorithm cannot initialize even crash prevention mode")
-            # Don't attempt any further fallbacks - let it fail
     
     def OnSecuritiesChanged(self, changes):
         """Forward security changes to orchestrator for strategy initialization."""
@@ -769,128 +773,16 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             self.Error(f"Error in OnSecuritiesChanged: {str(e)}")
     
     def OnSymbolChangedEvents(self, symbolChangedEvents):
-        """Handle futures rollover events using config-driven settings."""
+        """Handle futures rollover using dedicated rollover manager."""
         try:
-            # SECURITY: No fallback configuration - fail fast if config is invalid
-            if not self.config_manager or not self.config:
-                self.Error("SECURITY: No valid configuration available for rollover handling")
-                self.Error("CRITICAL: Cannot execute rollover without validated configuration")
-                return
+            # Delegate to the CRITICAL rollover manager component
+            self.rollover_manager.handle_symbol_changed_events(symbolChangedEvents)
             
-            # Get rollover configuration from validated config manager ONLY
-            try:
-                execution_config = self.config_manager.get_execution_config()
-                rollover_config = execution_config.get('rollover_config', {})
+            # Update local tracking for backward compatibility
+            self._rollover_events_count = getattr(self, '_rollover_events_count', 0) + len(symbolChangedEvents)
                 
-                if not rollover_config:
-                    self.Error("SECURITY: No rollover_config found in validated configuration")
-                    self.Error("CRITICAL: Cannot execute rollover without rollover configuration")
-                    return
-                    
-            except Exception as config_error:
-                self.Error(f"SECURITY: Failed to get rollover configuration: {str(config_error)}")
-                self.Error("CRITICAL: Cannot execute rollover without validated configuration")
-                return
-            
-            # Check if rollover handling is enabled
-            if not rollover_config.get('enabled', True):
-                self.Log("Rollover handling is disabled in config")
-                return
-            
-            for symbol, changedEvent in symbolChangedEvents.items():
-                oldSymbol = changedEvent.OldSymbol
-                newSymbol = changedEvent.NewSymbol
-                quantity = self.Portfolio[oldSymbol].Quantity
-                
-                # Create rollover tags using config
-                tag_prefix = rollover_config.get('rollover_tag_prefix', 'ROLLOVER')
-                tag = f"{tag_prefix} - {self.Time}: {oldSymbol} -> {newSymbol}"
-                
-                # Validate new contract if configured
-                if rollover_config.get('validate_rollover_contracts', True):
-                    if not self._validate_rollover_contract(newSymbol):
-                        if rollover_config.get('emergency_liquidation', True):
-                            self.Liquidate(oldSymbol, tag=f"{tag_prefix} - EMERGENCY LIQUIDATION")
-                            self.Error(f"Failed to validate new contract {newSymbol}, emergency liquidation executed")
-                        continue
-                
-                # Execute rollover with retry logic
-                success = self._execute_rollover_with_retry(
-                    oldSymbol, newSymbol, quantity, tag, rollover_config
-                )
-                
-                # Log rollover event if configured
-                if rollover_config.get('log_rollover_events', True):
-                    self.Log(f"ROLLOVER {'SUCCESS' if success else 'FAILED'}: {oldSymbol} -> {newSymbol}, quantity: {quantity}")
-                
-                # Track rollover costs if configured
-                if rollover_config.get('track_rollover_costs', True) and hasattr(self, 'system_reporter'):
-                    self.system_reporter.track_rollover_cost(oldSymbol, newSymbol, quantity)
-            
-            # Defensive check: Initialize tracking variables if not already set
-            if not hasattr(self, '_rollover_events_count'):
-                self._warmup_completed = False
-                self._first_rebalance_attempted = False
-                self._rollover_events_count = 0
-                self._algorithm_start_time = self.Time
-                self.Log("WARNING: Tracking variables initialized in OnSymbolChangedEvents (should have been in Initialize)")
-            
-            self._rollover_events_count += len(symbolChangedEvents)
-            
         except Exception as e:
-            self.Error(f"Error handling rollover events: {str(e)}")
-    
-    def _validate_rollover_contract(self, symbol):
-        """Validate that a rollover contract is tradeable."""
-        try:
-            # Basic validation - check if symbol exists in securities
-            if symbol in self.Securities:
-                return True
-            
-            # Additional validation could be added here
-            return True
-            
-        except Exception as e:
-            self.Error(f"Error validating rollover contract {symbol}: {str(e)}")
-            return False
-    
-    def _execute_rollover_with_retry(self, oldSymbol, newSymbol, quantity, tag, rollover_config):
-        """Execute rollover with retry logic based on config."""
-        max_attempts = rollover_config.get('retry_attempts', 3)
-        order_type = rollover_config.get('order_type', 'market')
-        
-        for attempt in range(max_attempts):
-            try:
-                # Liquidate old position
-                self.Liquidate(oldSymbol, tag=f"{tag} - CLOSE (attempt {attempt + 1})")
-                
-                # Open new position if we had quantity
-                if quantity != 0:
-                    if order_type.lower() == 'market':
-                        self.MarketOrder(newSymbol, quantity, tag=f"{tag} - OPEN (attempt {attempt + 1})")
-                    else:
-                        # Could add other order types like MarketOnOpen if needed
-                        self.MarketOrder(newSymbol, quantity, tag=f"{tag} - OPEN (attempt {attempt + 1})")
-                
-                return True  # Success
-                
-            except Exception as e:
-                if attempt == max_attempts - 1:
-                    # Final attempt failed
-                    self.Error(f"Rollover failed after {max_attempts} attempts: {str(e)}")
-                    
-                    # Emergency liquidation if configured
-                    if rollover_config.get('emergency_liquidation', True):
-                        try:
-                            self.Liquidate(oldSymbol, tag=f"{tag} - EMERGENCY")
-                        except:
-                            pass
-                    
-                    return False
-                else:
-                    self.Log(f"Rollover attempt {attempt + 1} failed, retrying: {str(e)}")
-        
-        return False
+            self.Error(f"Error in OnSymbolChangedEvents: {str(e)}")
     
     def WeeklyRebalance(self):
         """Execute weekly portfolio rebalancing."""
@@ -905,16 +797,39 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             
             # CRITICAL: Check if we're still warming up
             if self.IsWarmingUp:
-                warmup_info = self._get_warmup_status()
-                self.Log(f"REBALANCE SKIPPED: Still warming up - {warmup_info}")
+                # Get monitoring configuration for warmup logging
+                monitoring_config = self.config_manager.get_execution_config().get('monitoring', {})
+                progress_frequency = monitoring_config.get('warmup_progress_frequency_days', 90)
+                
+                # Only log rebalance skip periodically during warmup to reduce noise
+                should_log_skip = False
+                if progress_frequency > 0:
+                    if not hasattr(self, '_last_rebalance_skip_log'):
+                        self._last_rebalance_skip_log = self.Time
+                        should_log_skip = True
+                    elif (self.Time - self._last_rebalance_skip_log).days >= (progress_frequency / 4):  # Log rebalance skips more frequently than monthly
+                        self._last_rebalance_skip_log = self.Time
+                        should_log_skip = True
+                
+                if should_log_skip:
+                    warmup_info = self._get_warmup_status()
+                    self.Log(f"REBALANCE SKIPPED: Still warming up - {warmup_info}")
                 return
                 
             self.Log("="*50)
             self.Log("EXECUTING WEEKLY REBALANCE")
             self.Log("="*50)
             
+            # CRITICAL: Validate existing positions before rebalancing
+            # This prevents "security does not have an accurate price" errors during portfolio operations
+            if hasattr(self, 'portfolio_valuation_manager'):
+                validation_results = self.portfolio_valuation_manager.validate_portfolio_before_valuation()
+                if not validation_results['can_proceed_with_valuation']:
+                    self.Log("WARNING: Portfolio validation failed - skipping rebalance to prevent errors")
+                    return
+            
             # Generate portfolio targets through three-layer process
-            rebalance_result = self.orchestrator.generate_portfolio_targets()
+            rebalance_result = self.orchestrator.weekly_rebalance()
             
             if rebalance_result and rebalance_result.get('status') == 'success':
                 # Execute the rebalance
@@ -934,74 +849,190 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             self.Error(f"Error in weekly rebalance: {str(e)}")
     
     def MonthlyReporting(self):
-        """Generate monthly performance reports."""
+        """Generate monthly performance reports with QC mismatch detection."""
         try:
-            self.Log("="*50)
-            self.Log("GENERATING MONTHLY REPORT")
-            self.Log("="*50)
+            # Get monitoring configuration
+            monitoring_config = self.config_manager.get_execution_config().get('monitoring', {})
+            skip_during_warmup = monitoring_config.get('skip_reports_during_warmup', True)
+            progress_frequency = monitoring_config.get('warmup_progress_frequency_days', 90)
+            
+            # Skip monthly reports during warmup to reduce logging noise
+            if self.IsWarmingUp and skip_during_warmup:
+                # Only log warmup progress periodically if configured
+                if progress_frequency > 0:
+                    if hasattr(self, '_last_warmup_monthly_log'):
+                        days_since_last_log = (self.Time - self._last_warmup_monthly_log).days
+                        if days_since_last_log < progress_frequency:
+                            return
+                    
+                    self._last_warmup_monthly_log = self.Time
+                    warmup_config = self.config_manager.get_algorithm_config().get('warmup', {})
+                    warmup_days = warmup_config.get('calculated_days', 831)
+                    
+                    # Estimate warmup progress (rough calculation)
+                    start_time = self.StartDate
+                    elapsed_days = (self.Time - start_time).days
+                    progress_pct = min(100, (elapsed_days / warmup_days) * 100)
+                    
+                    self.Log(f"WARMUP PROGRESS: {progress_pct:.1f}% ({elapsed_days}/{warmup_days} days) - Monthly reports disabled during warmup")
+                return
             
             if hasattr(self, 'system_reporter'):
                 self.system_reporter.generate_monthly_performance_report()
             
-            # Report data integrity status
-            if hasattr(self, 'data_integrity_checker') and self.data_integrity_checker:
-                quarantine_status = self.data_integrity_checker.get_quarantine_status()
-                self.Log(f"Data Integrity Status:")
-                self.Log(f"  Quarantined symbols: {quarantine_status['quarantined_count']}")
-                self.Log(f"  Total symbols tracked: {quarantine_status['total_symbols_tracked']}")
-                
-                if quarantine_status['quarantined_symbols']:
-                    self.Log("  Quarantined details:")
-                    for symbol_info in quarantine_status['quarantined_symbols']:
-                        self.Log(f"    {symbol_info['ticker']}: {symbol_info['reason']} ({symbol_info['days_quarantined']} days)")
+            # CRITICAL: Add QC equity vs return mismatch detection
+            current_portfolio_value = self.Portfolio.TotalPortfolioValue
+            initial_capital = 10000000  # From config
             
-            # Report bad data position management status
-            if hasattr(self, 'bad_data_position_manager') and self.bad_data_position_manager:
-                position_status = self.bad_data_position_manager.get_status_report()
-                self.Log(f"Bad Data Position Management:")
-                for line in position_status.split('\n'):
-                    self.Log(f"  {line}")
+            # Calculate our own return for comparison with QC's charts
+            our_calculated_return = (current_portfolio_value - initial_capital) / initial_capital
+            
+            # Get QC's built-in statistics if available
+            qc_return = 0.0
+            try:
+                if hasattr(self, 'Statistics') and 'Total Return' in self.Statistics:
+                    qc_return = float(self.Statistics['Total Return'].replace('%', '')) / 100.0
+            except:
+                pass
+            
+            # Detect significant mismatches (>1% difference)
+            return_mismatch = abs(our_calculated_return - qc_return)
+            if return_mismatch > 0.01:  # 1% threshold
+                self.Log(f"CRITICAL: QC MISMATCH DETECTED")
+                self.Log(f"  Portfolio Value: ${current_portfolio_value:,.0f}")
+                self.Log(f"  Our Calculated Return: {our_calculated_return:.2%}")
+                self.Log(f"  QC Statistics Return: {qc_return:.2%}")
+                self.Log(f"  Mismatch: {return_mismatch:.2%}")
                 
-                # Cleanup resolved issues
-                self.bad_data_position_manager.cleanup_resolved_issues()
+                # Log position details during mismatch
+                self.Log(f"  Active Positions during mismatch:")
+                for holding in self.Portfolio.Values:
+                    if holding.Invested:
+                        symbol_str = str(holding.Symbol).split()[0]
+                        price = holding.Price
+                        quantity = holding.Quantity
+                        value = holding.HoldingsValue
+                        self.Log(f"    {symbol_str}: {quantity} @ ${price:.2f} = ${value:,.0f}")
+            
+            # Quick validation using centralized validator
+            valid_symbols = 0
+            current_slice = getattr(self, 'current_slice', None)
+            
+            for symbol in self.futures_symbols:
+                if hasattr(self, 'data_validator'):
+                    validation_result = self.data_validator.validate_symbol_for_trading(symbol, current_slice)
+                    if validation_result['is_valid']:
+                        valid_symbols += 1
+                else:
+                    # Fallback validation
+                    if symbol in self.Securities and self.Securities[symbol].HasData:
+                        valid_symbols += 1
+            
+            # Check for active positions
+            total_positions = sum(1 for holding in self.Portfolio.Values if holding.Invested)
+            
+            # Only log monthly report if there are issues or positions
+            issues_detected = valid_symbols < len(self.futures_symbols)
+            
+            if issues_detected or total_positions > 0 or return_mismatch > 0.01:
+                self.Log("================================================================================")
+                self.Log("MONTHLY PERFORMANCE REPORT")
+                self.Log("================================================================================")
+                self.Log(f"Portfolio Value: ${self.Portfolio.TotalPortfolioValue:,.0f}")
+                self.Log(f"Active Positions: {total_positions}")
+                self.Log(f"Valid Symbols: {valid_symbols}/{len(self.futures_symbols)}")
+                
+                # Only show position details if there are positions
+                if total_positions > 0:
+                    for holding in self.Portfolio.Values:
+                        if holding.Invested:
+                            symbol_str = str(holding.Symbol).split()[0] if ' ' in str(holding.Symbol) else str(holding.Symbol)
+                            weight = holding.HoldingsValue / self.Portfolio.TotalPortfolioValue
+                            self.Log(f"  {symbol_str}: {weight:.1%} (${holding.HoldingsValue:,.0f})")
+                
+                if issues_detected:
+                    invalid_count = len(self.futures_symbols) - valid_symbols
+                    self.Log(f"WARNING: {invalid_count} symbols have data issues")
             
         except Exception as e:
-            self.Error(f"Error in monthly reporting: {str(e)}")
+            self.Error(f"MonthlyReporting error: {str(e)}")
     
     def ValidateContinuousContracts(self):
-        """Daily validation using QC native functionality to diagnose /ZN vs ZN issues."""
+        """Daily validation using centralized data validator."""
         try:
-            if hasattr(self, 'contract_resolver') and self.contract_resolver:
-                self.Log("Starting daily QC native contract validation...")
+            valid_count = 0
+            invalid_count = 0
+            critical_issues = []
+            current_slice = getattr(self, 'current_slice', None)
+            
+            for symbol in self.futures_symbols:
+                # Use centralized validator with slice data
+                validation_result = self.data_validator.validate_symbol_for_trading(symbol, current_slice)
                 
-                # Log QC's native status for all futures
-                self.contract_resolver.log_qc_native_status()
-                
-                # Get diagnostics report
-                diagnostics = self.contract_resolver.get_diagnostics_report()
-                
-                self.Log(f"QC Native Status: "
-                        f"Failed history requests: {diagnostics['failed_history_requests']}, "
-                        f"Initialized symbols: {diagnostics['initialized_symbols']}")
-                
-                # Alert if there are persistent failures
-                if diagnostics['failed_history_requests'] > 0:
-                    self.Log(f"WARNING: {diagnostics['failed_history_requests']} symbols have history failures: "
-                           f"{diagnostics['failed_symbols']}")
-                    
-                    # Test history requests for failed symbols to understand the timing issue
-                    for symbol_str in diagnostics['failed_symbols'][:3]:  # Test first 3
-                        symbol = next((s for s in self.Securities.Keys if str(s) == symbol_str), None)
-                        if symbol:
-                            self.Log(f"Testing history for {symbol_str}...")
-                            test_history = self.contract_resolver.get_history_with_diagnostics(symbol, 10)
-                            if test_history is not None:
-                                self.Log(f"  SUCCESS: Got {len(test_history)} bars")
-                            else:
-                                self.Log(f"  FAILED: No history returned")
-        
+                if validation_result['is_valid']:
+                    valid_count += 1
+                else:
+                    invalid_count += 1
+                    # Only track critical issues
+                    if validation_result['reason'] in ['symbol_not_in_securities', 'no_data', 'invalid_price', 'no_current_slice_data']:
+                        critical_issues.append(f"{symbol}: {validation_result['reason']}")
+            
+            # Only log if there are critical issues or it's post-warmup with problems
+            if critical_issues:
+                self.Log(f"CRITICAL VALIDATION ISSUES: {len(critical_issues)} symbols")
+                for issue in critical_issues[:3]:  # Limit to first 3
+                    self.Log(f"  {issue}")
+                if len(critical_issues) > 3:
+                    self.Log(f"  ... and {len(critical_issues) - 3} more")
+            
+            # Smart logging: only log if there are issues or significant changes
+            if not hasattr(self, '_last_validation_counts'):
+                self._last_validation_counts = {'valid': 0, 'invalid': 0, 'last_log_time': None}
+            
+            # Determine if we should log
+            should_log_validation = False
+            log_reason = ""
+            
+            # Always log critical issues
+            if critical_issues:
+                should_log_validation = True
+                log_reason = "critical_issues"
+            
+            # Log if validation counts changed
+            elif (valid_count != self._last_validation_counts['valid'] or 
+                  invalid_count != self._last_validation_counts['invalid']):
+                should_log_validation = True
+                log_reason = "count_change"
+            
+            # Log if no valid contracts (critical situation)
+            elif valid_count == 0 and not self.IsWarmingUp:
+                should_log_validation = True
+                log_reason = "no_valid_contracts"
+            
+            # Periodic summary (once per week) for healthy validation
+            elif (not self._last_validation_counts['last_log_time'] or 
+                  (self.Time - self._last_validation_counts['last_log_time']).days >= 7):
+                if valid_count > 0 and invalid_count == 0 and not self.IsWarmingUp:
+                    should_log_validation = True
+                    log_reason = "weekly_healthy_summary"
+                    self._last_validation_counts['last_log_time'] = self.Time
+            
+            if should_log_validation:
+                if log_reason == "no_valid_contracts":
+                    self.Log("CRITICAL: No valid contracts - trading will not occur!")
+                elif log_reason == "weekly_healthy_summary":
+                    self.Log(f"Contract validation healthy: {valid_count} valid, all contracts operational")
+                else:
+                    self.Log(f"Contract validation: {valid_count} valid, {invalid_count} invalid")
+            
+            # Update tracking
+            self._last_validation_counts.update({
+                'valid': valid_count,
+                'invalid': invalid_count
+            })
+            
         except Exception as e:
-            self.Error(f"Error in QC native contract validation: {str(e)}")
+            self.Error(f"ValidateContinuousContracts error: {str(e)}")
     
     def OnEndOfAlgorithm(self):
         """Generate final algorithm report."""
@@ -1026,6 +1057,16 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             self.Log(f"  Rollover events handled: {self._rollover_events_count}")
             self.Log(f"  First rebalance attempted: {self._first_rebalance_attempted}")
             self.Log(f"  Futures symbols tracked: {len(getattr(self, 'futures_symbols', []))}")
+            
+            # Log rollover manager statistics if available
+            if hasattr(self, 'rollover_manager'):
+                rollover_stats = self.rollover_manager.get_rollover_statistics()
+                self.Log(f"  Rollover Manager Statistics:")
+                self.Log(f"    Total rollover events: {rollover_stats.get('total_rollover_events', 0)}")
+                self.Log(f"    Rollover history entries: {rollover_stats.get('rollover_history_length', 0)}")
+                if rollover_stats.get('last_rollover'):
+                    last_rollover = rollover_stats['last_rollover']
+                    self.Log(f"    Last rollover: {last_rollover['old_symbol']} -> {last_rollover['new_symbol']} on {last_rollover['timestamp']}")
             
         except Exception as e:
             self.Error(f"Error in OnEndOfAlgorithm: {str(e)}")

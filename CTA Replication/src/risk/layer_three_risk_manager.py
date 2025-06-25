@@ -44,6 +44,12 @@ class LayerThreeRiskManager:
             self.peak_portfolio_value = None
             self.current_drawdown = 0.0
             
+            # Initialize risk management counters and flags
+            self.volatility_scalings = 0
+            self.position_limits_applied = 0
+            self.emergency_stop_triggered = False
+            self.risk_metrics_history = []
+            
             self.algorithm.Log(f"LayerThreeRiskManager: Initialized with target vol {self.target_portfolio_vol:.1%}, "
                              f"max leverage {self.max_leverage_multiplier}x")
             
@@ -98,12 +104,16 @@ class LayerThreeRiskManager:
                         self.algorithm.Log(f"RiskManager: WARNING - No centralized cache for {symbol}, using direct History API")
                         history = self.algorithm.History([symbol], 2, Resolution.Daily)
                     
-                    if history is not None and not history.empty and len(history) >= 2:
-                        prices = history['close'].values
-                        if len(prices) >= 2 and prices[-2] > 0:
-                            daily_return = (prices[-1] - prices[-2]) / prices[-2]
-                            self._update_return_data(symbol, daily_return)
-                            symbols_updated += 1
+                    # Convert to list to check if empty (QC data doesn't support len() directly)
+                    if history is not None:
+                        history_list = list(history)
+                        if len(history_list) >= 2:
+                            # Extract prices from QC data
+                            prices = [bar.Close if hasattr(bar, 'Close') else bar.close for bar in history_list]
+                            if len(prices) >= 2 and prices[-2] > 0:
+                                daily_return = (prices[-1] - prices[-2]) / prices[-2]
+                                self._update_return_data(symbol, daily_return)
+                                symbols_updated += 1
                 except:
                     continue
             
@@ -280,57 +290,91 @@ class LayerThreeRiskManager:
         return self._get_default_correlation(symbol1, symbol2)
     
     def _get_asset_volatility(self, symbol):
-        """Get default volatility by asset type."""
+        """Get default volatility by asset type using centralized config."""
         if symbol in self.volatility_estimates:
             return self.volatility_estimates[symbol]
         
+        # Use centralized ASSET_DEFAULTS from config
+        full_config = self.config_manager.get_full_config()
+        asset_defaults = full_config.get('asset_defaults', {})
+        volatilities = asset_defaults.get('volatilities', {})
+        
         symbol_str = str(symbol)
-        if 'ES' in symbol_str or 'NQ' in symbol_str:
-            return 0.20
+        if 'ES' in symbol_str or 'NQ' in symbol_str or 'YM' in symbol_str:
+            return volatilities.get('equities', 0.20)
         elif 'ZN' in symbol_str or 'ZB' in symbol_str:
-            return 0.08
+            return volatilities.get('bonds', 0.08)
         elif any(fx in symbol_str for fx in ['6E', '6J', '6B']):
-            return 0.12
+            return volatilities.get('fx', 0.12)
         elif any(commodity in symbol_str for commodity in ['CL', 'GC']):
-            return 0.25
+            return volatilities.get('commodities', 0.25)  # This drives the 14.9% calculation
         else:
-            return 0.20
+            return volatilities.get('default', 0.20)
     
     def _get_default_correlation(self, symbol1, symbol2):
-        """Get default correlation between asset types."""
+        """Get default correlation between asset types using centralized config."""
+        # Use centralized ASSET_DEFAULTS from config
+        full_config = self.config_manager.get_full_config()
+        asset_defaults = full_config.get('asset_defaults', {})
+        correlations = asset_defaults.get('correlations', {})
+        
         s1, s2 = str(symbol1), str(symbol2)
         
-        if all(eq in s for eq in ['ES', 'NQ'] for s in [s1, s2]):
-            return 0.85
+        # Within asset class correlations
+        if all(eq in s for eq in ['ES', 'NQ', 'YM'] for s in [s1, s2]):
+            return correlations.get('within_equity', 0.85)
         elif all(bond in s for bond in ['ZN', 'ZB'] for s in [s1, s2]):
-            return 0.80
-        elif any(eq in s1 for eq in ['ES', 'NQ']) and any(bond in s2 for bond in ['ZN', 'ZB']):
-            return -0.30
-        elif any(bond in s1 for bond in ['ZN', 'ZB']) and any(eq in s2 for eq in ['ES', 'NQ']):
-            return -0.30
+            return correlations.get('within_fixed_income', 0.70)
+        elif all(commodity in s for commodity in ['CL', 'GC'] for s in [s1, s2]):
+            return correlations.get('within_commodity', 0.30)
+        
+        # Cross-asset class correlations
+        elif any(eq in s1 for eq in ['ES', 'NQ', 'YM']) and any(bond in s2 for bond in ['ZN', 'ZB']):
+            return correlations.get('equity_bond', -0.10)
+        elif any(bond in s1 for bond in ['ZN', 'ZB']) and any(eq in s2 for eq in ['ES', 'NQ', 'YM']):
+            return correlations.get('equity_bond', -0.10)
+        elif any(eq in s1 for eq in ['ES', 'NQ', 'YM']) and any(commodity in s2 for commodity in ['CL', 'GC']):
+            return correlations.get('equity_commodity', 0.20)
+        elif any(commodity in s1 for commodity in ['CL', 'GC']) and any(eq in s2 for eq in ['ES', 'NQ', 'YM']):
+            return correlations.get('equity_commodity', 0.20)
+        elif any(bond in s1 for bond in ['ZN', 'ZB']) and any(commodity in s2 for commodity in ['CL', 'GC']):
+            return correlations.get('bond_commodity', -0.05)
+        elif any(commodity in s1 for commodity in ['CL', 'GC']) and any(bond in s2 for bond in ['ZN', 'ZB']):
+            return correlations.get('bond_commodity', -0.05)
+        
+        # Default cross-asset correlation
         else:
-            return 0.30
+            return correlations.get('cross_asset_default', 0.15)
     
     def _check_emergency_stops(self):
         """Check for emergency stop conditions."""
         try:
             current_portfolio_value = float(self.algorithm.Portfolio.TotalPortfolioValue)
             
-            if current_portfolio_value > self.peak_portfolio_value:
+            # Initialize peak portfolio value if not set
+            if self.peak_portfolio_value is None:
+                self.peak_portfolio_value = current_portfolio_value
+            elif current_portfolio_value > self.peak_portfolio_value:
                 self.peak_portfolio_value = current_portfolio_value
             
             if self.peak_portfolio_value > 0:
                 self.current_drawdown = (self.peak_portfolio_value - current_portfolio_value) / self.peak_portfolio_value
             
-            if self.last_portfolio_value > 0:
+            if self.last_portfolio_value is not None and self.last_portfolio_value > 0:
                 daily_return = (current_portfolio_value - self.last_portfolio_value) / self.last_portfolio_value
                 if daily_return < -self.daily_stop_loss:
                     self.algorithm.Log(f"LAYER 3: DAILY STOP LOSS TRIGGERED: {daily_return:.2%}")
+                    # Defensive check for attribute existence (QuantConnect caching issue)
+                    if not hasattr(self, 'emergency_stop_triggered'):
+                        self.emergency_stop_triggered = False
                     self.emergency_stop_triggered = True
                     return True
             
             if self.current_drawdown > self.max_drawdown_stop:
                 self.algorithm.Log(f"LAYER 3: MAX DRAWDOWN STOP TRIGGERED: {self.current_drawdown:.2%}")
+                # Defensive check for attribute existence (QuantConnect caching issue)
+                if not hasattr(self, 'emergency_stop_triggered'):
+                    self.emergency_stop_triggered = False
                 self.emergency_stop_triggered = True
                 return True
             
@@ -354,6 +398,9 @@ class LayerThreeRiskManager:
             scaled_targets = {symbol: weight * vol_scaling_factor for symbol, weight in targets.items()}
             
             if abs(vol_scaling_factor - 1.0) > 0.1:
+                # Defensive check for attribute existence (QuantConnect caching issue)
+                if not hasattr(self, 'volatility_scalings'):
+                    self.volatility_scalings = 0
                 self.volatility_scalings += 1
                 data_quality = portfolio_metrics.get('data_quality', 'unknown')
                 self.algorithm.Log(f"LAYER 3: Vol targeting ({data_quality}): {estimated_vol:.1%} -> {self.target_portfolio_vol:.1%} "
@@ -377,6 +424,9 @@ class LayerThreeRiskManager:
                     weight = self.max_single_position if weight > 0 else -self.max_single_position
                     
                     if not limits_applied:
+                        # Defensive check for attribute existence (QuantConnect caching issue)
+                        if not hasattr(self, 'position_limits_applied'):
+                            self.position_limits_applied = 0
                         self.position_limits_applied += 1
                         limits_applied = True
                     
@@ -421,6 +471,9 @@ class LayerThreeRiskManager:
                 'data_quality': portfolio_metrics.get('data_quality', 'unknown'),
                 'current_drawdown': self.current_drawdown
             }
+            # Defensive check for attribute existence (QuantConnect caching issue)
+            if not hasattr(self, 'risk_metrics_history'):
+                self.risk_metrics_history = []
             self.risk_metrics_history.append(risk_metrics)
             
         except Exception as e:
@@ -447,6 +500,14 @@ class LayerThreeRiskManager:
     
     def get_risk_status(self):
         """Get current risk status."""
+        # Defensive checks for attributes (QuantConnect caching issue)
+        if not hasattr(self, 'emergency_stop_triggered'):
+            self.emergency_stop_triggered = False
+        if not hasattr(self, 'volatility_scalings'):
+            self.volatility_scalings = 0
+        if not hasattr(self, 'position_limits_applied'):
+            self.position_limits_applied = 0
+            
         return {
             'target_volatility': self.target_portfolio_vol,
             'current_drawdown': self.current_drawdown,
