@@ -165,19 +165,20 @@ STRATEGY_CONFIGS = {
         # Core MTUM Parameters (Preserved from Equity Version)
         'target_volatility': 0.2,              # 20% vol target
         'rebalance_frequency': 'monthly',      # Monthly rebalancing
-        'max_position_weight': 0.6,            # 60% max position
+        'max_position_weight': 3.0,            # Percentage max position per asset
         'warmup_days': 1092,                   # 3 years for volatility calculation (156 weeks * 7 days)
         
         # MTUM Methodology (Unchanged)
         'momentum_lookbacks_months': [6, 12],  # Dual-period analysis (6m & 12m)
         'volatility_lookback_days': 1092,      # 3-year weekly volatility (156 weeks * 7 days)
+        'covariance_lookback_days': 126,       # Lookback for var-covar matrix (matches Layer 3)
         'signal_standardization_clip': 3.0,    # ±3 std dev clipping (MTUM standard)
         'risk_free_rate': 0.02,                # 2% risk-free rate adjustment
         
         # FUTURES MARKET ADAPTATIONS (New)
-        'momentum_threshold': 0.2,              # Absolute momentum threshold (futures innovation)
         'long_short_enabled': True,             # Enable short selling (futures advantage)
         'signal_strength_weighting': True,      # Signal-based position sizing (not market cap)
+        'allocation_scaling_method': 'mad',  # 'zscore' or 'mad' for intra-asset allocation
         
         # Legacy Parameters (Kept for Compatibility)
         'recent_exclusion_days': 22,           # 1 month recent exclusion
@@ -316,6 +317,8 @@ RISK_CONFIG = {
     'target_portfolio_vol': 0.4,               # 40% portfolio volatility
     'max_leverage_multiplier': 8.0,           # 8x max leverage for futures
     'min_notional_exposure': 3.0,              # 3x minimum notional exposure
+    # Fallback multiplier when data quality is insufficient (warm-up or sparse data)
+    'fallback_vol_multiplier': 2.0,            # replaces hard-coded 3.5 in Layer 3
     
     # Position Limits
     'max_single_position': 3.0,                # 300% max position (30% real with 10x leverage)
@@ -331,20 +334,73 @@ RISK_CONFIG = {
 }
 
 # =============================================================================
-# LOGGING - SIMPLIFIED
-# =============================================================================
+# LOGGING CONFIGURATION (affects SmartLogger & _should_log_component helpers)
+# -----------------------------------------------------------------------------
+# Purpose
+#   * Fine-grained control over how much text ends up in the back-test log.
+#   * Helps stay under QuantConnect's 100 KB per-back-test limit.
+#
+# How it works
+#   * `global_level` sets a default (DEBUG < INFO < WARNING < ERROR < CRITICAL).
+#   * `components` can override that default for a named module/component.
+#     Component names are the lowercase keys passed to SmartLogger or the
+#     strings used by `_should_log_component()` (see main.py & warmup_manager).
+#   * Anything logged with a *lower* severity than the configured level is
+#     silently discarded.
+#
+# Typical usage
+#   1)  Quiet start-up and focus on trading lines:
+#       set `global_level` to 'WARNING' (or even 'ERROR').
+#   2)  Temporarily crank up detail for a subsystem while debugging, e.g.
+#       'execution': 'DEBUG'.
+#   3)  Leave noisy modules (config / universe build) at 'ERROR' so they only
+#       speak when something is actually wrong.
+#
+# -----------------------------------------------------------------------------
+#   >>>  CHANGE LEVELS HERE - NO CODE CHANGE REQUIRED  <<<
+# -----------------------------------------------------------------------------
+
 LOGGING_CONFIG = {
-    'global_level': 'INFO',
+    'global_level': 'INFO',      # DEBUG | INFO | WARNING | ERROR | CRITICAL
     'components': {
+        # Main top-level algorithm (after warm-up)
         'main_algorithm': 'INFO',
+        # MTUM strategy logging (forecasts, targets, etc.)
         'mtum_cta': 'INFO',
+        # Kestner strategy (disabled by default, keep at DEBUG for dev)
         'kestner_cta': 'DEBUG',
+        # Trade execution manager
         'execution': 'DEBUG',
+        # Layer-3 risk manager
         'risk': 'INFO',
+        # Universe builder & rollover helper
         'universe': 'WARNING',
+        # Configuration manager / validator (very noisy at start-up)
         'config': 'ERROR',
     }
 }
+
+# Convenience helpers for code (imported by main.py & warmup_manager) ----------
+
+def _level_to_int(level: str) -> int:
+    """Translate level name → numeric rank (lower = more verbose)."""
+    mapping = {
+        'DEBUG': 10,
+        'INFO': 20,
+        'WARNING': 30,
+        'ERROR': 40,
+        'CRITICAL': 50,
+    }
+    return mapping.get(level.upper(), 20)
+
+def get_log_level_for_component(component_name: str) -> str:
+    """Return the configured level **string** for a component (defaults to global)."""
+    comp = component_name.lower()
+    return LOGGING_CONFIG['components'].get(comp, LOGGING_CONFIG.get('global_level', 'INFO')).upper()
+
+def should_log(component_name: str, level: str) -> bool:
+    """Quick helper → True if *level* should be emitted for *component*."""
+    return _level_to_int(level) >= _level_to_int(get_log_level_for_component(component_name))
 
 # =============================================================================
 # ADDITIONAL HELPER FUNCTIONS

@@ -14,6 +14,7 @@ DESIGN PRINCIPLES:
 """
 
 from AlgorithmImports import *
+from datetime import timedelta
 
 class CentralizedDataValidator:
     """
@@ -53,6 +54,9 @@ class CentralizedDataValidator:
             'outliers_detected': 0,
             'last_reset': algorithm.Time.date()
         }
+        
+        # Track first time we encountered each symbol (for fresh-contract grace period)
+        self._symbol_first_seen = {}
         
         self.algorithm.Log("CentralizedDataValidator: Initialized (minimal logging mode)")
     
@@ -102,6 +106,10 @@ class CentralizedDataValidator:
             if symbol not in self.algorithm.Securities:
                 self._update_daily_stats('failed')
                 return {'is_valid': False, 'reason': 'symbol_not_in_securities', 'safe_price': None}
+            
+            # Record first-seen timestamp
+            if symbol not in self._symbol_first_seen:
+                self._symbol_first_seen[symbol] = self.algorithm.Time
             
             security = self.algorithm.Securities[symbol]
             
@@ -219,6 +227,10 @@ class CentralizedDataValidator:
             if symbol not in self.algorithm.Securities:
                 return {'is_valid': False, 'reason': 'symbol_not_in_securities', 'trading_symbol': symbol}
             
+            # Record first-seen timestamp
+            if symbol not in self._symbol_first_seen:
+                self._symbol_first_seen[symbol] = self.algorithm.Time
+            
             security = self.algorithm.Securities[symbol]
             
             # Warmup: Just need data for indicator building
@@ -242,6 +254,10 @@ class CentralizedDataValidator:
             if symbol not in self.algorithm.Securities:
                 return {'is_valid': False, 'reason': 'symbol_not_in_securities', 'trading_symbol': symbol}
             
+            # Record first-seen timestamp
+            if symbol not in self._symbol_first_seen:
+                self._symbol_first_seen[symbol] = self.algorithm.Time
+            
             security = self.algorithm.Securities[symbol]
             
             # QC Native: Basic data validation
@@ -262,10 +278,22 @@ class CentralizedDataValidator:
                 mapped_contract = security.Mapped if hasattr(security, 'Mapped') else symbol
                 mapped_str = str(mapped_contract).split(' ')[-1] if ' ' in str(mapped_contract) else str(mapped_contract)
                 
-                # Only log slice data missing during trading hours to reduce noise
-                if not self.algorithm.IsWarmingUp:
+                # Grace period 1: Newly-added symbols (≤ 1 day)
+                age = (self.algorithm.Time - self._symbol_first_seen.get(symbol, self.algorithm.Time)).total_seconds()
+
+                # Grace period 2: Exchange holiday – the previous calendar day produced **no bar at all**.
+                # Example: Monday holiday → daily bar for Tuesday will not exist when we run validation at 00:00 Tuesday.
+                prev_calendar_day = (self.algorithm.Time - timedelta(days=1)).date()
+                is_prev_day_holiday = not security.Exchange.Hours.IsDateOpen(prev_calendar_day)
+
+                if not self.algorithm.IsWarmingUp and age >= 86400 and not is_prev_day_holiday:
+                    # Only log missing slice data when it is *unexpected* (i.e., not holiday & not new symbol)
                     self.algorithm.Log(f"SLICE DATA MISSING: {mapped_str} not in current slice data")
-                
+
+                # Treat holiday-related absence as *valid* to avoid downgrading data quality.
+                if is_prev_day_holiday:
+                    return {'is_valid': True, 'reason': 'holiday_no_slice', 'trading_symbol': symbol}
+
                 return {'is_valid': False, 'reason': 'no_current_slice_data', 'trading_symbol': symbol}
             
             # Use mapped contract for actual trading

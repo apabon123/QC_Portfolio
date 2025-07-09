@@ -231,7 +231,24 @@ class WarmupManager:
                 if hasattr(self.algorithm, '_warmup_start_time') and self.algorithm._warmup_start_time:
                     elapsed = (self.algorithm.Time - self.algorithm._warmup_start_time).days
                     progress_pct = min(100, (elapsed / self.algorithm._warmup_total_days) * 100)
-                    self.algorithm.Log(f"WARMUP PROGRESS: {progress_pct:.1f}% ({elapsed}/{self.algorithm._warmup_total_days} days)")
+
+                    # Throttle logging: only output when progress jumps ≥5% AND ≥30 days since last log
+                    should_log = False
+                    if not hasattr(self, '_last_warmup_progress_pct'):
+                        self._last_warmup_progress_pct = -10  # force first log
+                        self._last_warmup_progress_time = self.algorithm.Time - timedelta(days=31)
+
+                    pct_delta = progress_pct - self._last_warmup_progress_pct
+                    days_delta = (self.algorithm.Time - self._last_warmup_progress_time).days
+
+                    if pct_delta >= 5 and days_delta >= 30:
+                        should_log = True
+
+                    if should_log:
+                        self.algorithm.Log(
+                            f"WARMUP PROGRESS: {progress_pct:.1f}% ({elapsed}/{self.algorithm._warmup_total_days} days)")
+                        self._last_warmup_progress_pct = progress_pct
+                        self._last_warmup_progress_time = self.algorithm.Time
                 else:
                     self.algorithm.Log(f"WARMUP: In progress (target: {self.algorithm._warmup_total_days} days)")
             else:

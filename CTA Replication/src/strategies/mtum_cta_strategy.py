@@ -4,6 +4,8 @@ from AlgorithmImports import *
 import numpy as np
 from collections import deque
 from strategies.base_strategy import BaseStrategy
+import math
+from risk.signal_scalers import ZScoreSignalScaler, MADSignalScaler
 
 class EfficientPortfolioVolatility:
     """Efficient portfolio volatility using variance-covariance matrix."""
@@ -176,14 +178,20 @@ class MTUMCTAStrategy(BaseStrategy):
             self.target_volatility = self.config['target_volatility']
             self.max_position_weight = self.config['max_position_weight']
             
-            # Futures adaptation parameters
-            self.momentum_threshold = self.config.get('momentum_threshold', 0.0)
+            # Futures adaptation parameters (threshold removed – all assets included)
             self.enable_long_short = self.config.get('long_short_enabled', True)
             self.signal_strength_weighting = self.config.get('signal_strength_weighting', True)
             
             # Risk management
             self.risk_free_rate = self.config.get('risk_free_rate', 0.02)
             self.signal_clip_threshold = self.config.get('signal_standardization_clip', 3.0)
+
+            # Allocation scaling method (Z-SCORE or MAD)
+            self.allocation_scaling_method = self.config.get('allocation_scaling_method', 'zscore').lower()
+            if self.allocation_scaling_method == 'mad':
+                self.signal_scaler = MADSignalScaler(algorithm=self.algorithm, name=f"{self.name}-MAD")
+            else:
+                self.signal_scaler = ZScoreSignalScaler(algorithm=self.algorithm, name=f"{self.name}-ZSCORE")
             
             # Initialize tracking containers
             self.continuous_contracts = []
@@ -194,10 +202,11 @@ class MTUMCTAStrategy(BaseStrategy):
             self.initialize_symbol_data()
             
             # Initialize efficient portfolio volatility calculator
+            self.covariance_lookback_days = self.config.get('covariance_lookback_days', 126)
             self.portfolio_vol_calculator = EfficientPortfolioVolatility(
                 algorithm=self.algorithm,
                 symbols=self.continuous_contracts,
-                lookback_days=252
+                lookback_days=self.covariance_lookback_days
             )
             
             # Log initialization summary
@@ -212,12 +221,13 @@ class MTUMCTAStrategy(BaseStrategy):
         """Log initialization summary."""
         mode = "LONG-SHORT" if self.enable_long_short else "LONG-ONLY"
         weighting = "SIGNAL-STRENGTH" if self.signal_strength_weighting else "EQUAL-WEIGHT"
+        scaler = self.allocation_scaling_method.upper()
         
         self.algorithm.Log(f"{self.name}: MTUM Futures Adaptation - {self.momentum_lookbacks} month lookbacks, "
-                          f"{self.target_volatility:.1%} vol target, {mode} mode")
+                          f"{self.target_volatility:.1%} vol target, {mode} mode, {scaler} scaling")
         
-        self.algorithm.Log(f"{self.name}: Futures innovations - Threshold: {self.momentum_threshold:.3f}, "
-                          f"Weighting: {weighting}, 3Y volatility: {self.volatility_lookback_days}d")
+        self.algorithm.Log(f"{self.name}: Futures innovations - Weighting: {weighting}, 3Y volatility: {self.volatility_lookback_days}d, "
+                          f"Cov lookback: {self.covariance_lookback_days}d")
         
         self.algorithm.Log(f"{self.name}: Preserves MTUM DNA - Risk-adjusted momentum, dual-period analysis, "
                           f"±{self.signal_clip_threshold} std dev standardization")
@@ -349,8 +359,8 @@ class MTUMCTAStrategy(BaseStrategy):
             if not signals:
                 return {}
             
-            targets = self._apply_position_limits(signals)
-            targets = self._apply_volatility_targeting(targets)
+            targets = self._apply_volatility_targeting(signals)
+            targets = self._apply_position_limits(targets)
             targets = self._validate_trade_sizes(targets)
             
             self.current_targets = targets
@@ -532,11 +542,10 @@ class MTUMCTAStrategy(BaseStrategy):
         
         if momentum_scores:
             standardized_scores = self._mtum_standardize_and_average(momentum_scores)
-            qualified_signals = self._apply_absolute_momentum_thresholds(standardized_scores)
+            qualified_signals = standardized_scores  # All assets pass through – no threshold filtering
             signals = self._convert_to_signal_strength_weights(qualified_signals)
             
-            self.algorithm.Log(f"{self.name}: Generated {len(signals)} signals from {len(qualified_signals)} qualified "
-                             f"(threshold: {self.momentum_threshold:.3f})")
+            self.algorithm.Log(f"{self.name}: Generated {len(signals)} signals across {len(qualified_signals)} assets")
         
         return signals
 
@@ -596,80 +605,51 @@ class MTUMCTAStrategy(BaseStrategy):
             self.algorithm.Error(f"{self.name}: Error averaging momentum scores: {str(e)}")
             return {}
 
-    def _apply_absolute_momentum_thresholds(self, standardized_scores):
-        """Apply absolute momentum thresholds - Futures Innovation."""
-        if not standardized_scores:
-            return {}
-        
-        try:
-            qualified_signals = {}
-            
-            for symbol, score in standardized_scores.items():
-                if abs(score) > self.momentum_threshold:
-                    qualified_signals[symbol] = score
-                    
-                    self.algorithm.Debug(f"{self.name}: {symbol} qualified - Score: {score:.3f} "
-                                       f"(threshold: {self.momentum_threshold:.3f})")
-                else:
-                    self.algorithm.Debug(f"{self.name}: {symbol} below threshold - Score: {score:.3f} "
-                                       f"< {self.momentum_threshold:.3f}")
-            
-            total_assets = len(standardized_scores)
-            qualified_assets = len(qualified_signals)
-            self.algorithm.Log(f"{self.name}: Threshold filtering - {qualified_assets}/{total_assets} assets qualified "
-                             f"(threshold: {self.momentum_threshold:.3f})")
-            
-            return qualified_signals
-            
-        except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error applying momentum thresholds: {str(e)}")
-            return {}
-    
     def _convert_to_signal_strength_weights(self, qualified_signals):
-        """Convert qualified signals to portfolio weights using signal-strength weighting."""
+        """Convert qualified signals into risk-balanced weights using the configured scaling method.
+
+        Steps:
+        1. Convert the raw (risk-adjusted) momentum scores into *forecasts* using either
+           Z-Score or MAD scaling (see risk.signal_scalers).
+        2. Risk–adjust each forecast by dividing by the asset volatility (inverse-vol weighting).
+        3. Normalise the weights such that the sum of absolute weights equals one.  This preserves
+           the leverage profile expected by downstream volatility targeting.
+        4. Respect `enable_long_short` flag and apply per-asset position limits.
+        """
         if not qualified_signals:
             return {}
-        
+
         try:
-            weights = {}
-            
-            if self.enable_long_short:
-                total_abs_signals = sum(abs(signal) for signal in qualified_signals.values())
-                
-                if total_abs_signals == 0:
+            # ------------------------------------------------------------------
+            # 1. Generate forecasts via the selected scaling method
+            # ------------------------------------------------------------------
+            forecasts = self.signal_scaler.process(qualified_signals)
+            if not forecasts:
+                return {}
+
+            # ------------------------------------------------------------------
+            # 2. Optionally drop shorts in long-only mode
+            # ------------------------------------------------------------------
+            if not self.enable_long_short:
+                forecasts = {s: f for s, f in forecasts.items() if f > 0}
+                if not forecasts:
                     return {}
-                
-                for symbol, signal in qualified_signals.items():
-                    weight = signal / total_abs_signals
-                    weights[symbol] = weight
-                    
-                    direction = "LONG" if signal > 0 else "SHORT"
-                    self.algorithm.Debug(f"{self.name}: {symbol} {direction} weight: {weight:.3f} "
-                                       f"(signal: {signal:.3f})")
-                
-                net_exposure = sum(weights.values())
-                gross_exposure = sum(abs(w) for w in weights.values())
-                
-                self.algorithm.Log(f"{self.name}: Signal-strength weighting - Net: {net_exposure:.1%}, "
-                                 f"Gross: {gross_exposure:.1%}")
-                
-            else:
-                positive_signals = {s: max(0, signal) for s, signal in qualified_signals.items()}
-                total_positive = sum(positive_signals.values())
-                
-                if total_positive > 0:
-                    for symbol, signal in positive_signals.items():
-                        if signal > 0:
-                            weights[symbol] = signal / total_positive
-                            self.algorithm.Debug(f"{self.name}: {symbol} LONG weight: {weights[symbol]:.3f}")
-            
-            if weights:
-                weights = self._apply_position_limits(weights)
-            
+
+            weights = forecasts.copy()
+
+            # ------------------------------------------------------------------
+            # 3. Diagnostics (no per-asset clipping here – caps happen later)
+            # ------------------------------------------------------------------
+            # Logging (concise)
+            net_exposure = sum(weights.values())
+            gross_exposure = sum(abs(w) for w in weights.values())
+            self.algorithm.Log(
+                f"{self.name}: {self.allocation_scaling_method.upper()} weighting - Net: {net_exposure:.1%}, Gross: {gross_exposure:.1%}")
+
             return weights
-            
+
         except Exception as e:
-            self.algorithm.Error(f"{self.name}: Error converting to signal-strength weights: {str(e)}")
+            self.algorithm.Error(f"{self.name}: Error converting signals to weights: {str(e)}")
             return {}
 
     def _apply_volatility_targeting(self, weights):
@@ -690,9 +670,11 @@ class MTUMCTAStrategy(BaseStrategy):
             for symbol, weight in weights.items():
                 scaled_weights[symbol] = weight * vol_scaling_factor
             
-            if abs(vol_scaling_factor - 1.0) > 0.05:
-                self.algorithm.Log(f"{self.name}: Volatility targeting - Current: {current_vol:.1%}, "
-                                 f"Target: {self.target_volatility:.1%}, Scale: {vol_scaling_factor:.2f}")
+            if abs(vol_scaling_factor - 1.0) > 0.01:
+                method = getattr(self, "_last_portfolio_vol_method", "unknown")
+                self.algorithm.Log(
+                    f"{self.name}: Volatility targeting - Current {current_vol:.1%} (method: {method}), "
+                    f"Target {self.target_volatility:.1%}, Scale {vol_scaling_factor:.2f}")
             
             return scaled_weights
             
@@ -722,19 +704,31 @@ class MTUMCTAStrategy(BaseStrategy):
             
             if hasattr(self, 'portfolio_vol_calculator'):
                 portfolio_vol = self.portfolio_vol_calculator.calculate_portfolio_volatility(valid_weights)
-                
+
                 if 0.05 <= portfolio_vol <= 0.50:
+                    self._last_portfolio_vol_method = 'varcov'
                     if self.algorithm.Time.day == 1:
-                        self.algorithm.Log(f"{self.name}: Var-cov portfolio vol: {portfolio_vol:.1%} "
-                                         f"(gross exposure: {sum(abs(w) for w in valid_weights.values()):.1%})")
+                        self.algorithm.Log(
+                            f"{self.name}: Var-cov portfolio vol: {portfolio_vol:.1%} "
+                            f"(gross exposure: {sum(abs(w) for w in valid_weights.values()):.1%})")
                     return portfolio_vol
                 else:
-                    self.algorithm.Log(f"{self.name}: Var-cov volatility out of range: {portfolio_vol:.1%}, using fallback")
-            
-            return self._ultra_simple_portfolio_volatility(valid_weights)
-            
+                    self.algorithm.Log(
+                        f"{self.name}: Var-cov volatility out of expected range ({portfolio_vol:.1%}); "
+                        f"falling back to weighted-vol estimate")
+
+            # Fallback estimation --------------------------------------------------
+            self._last_portfolio_vol_method = 'weighted-vol'
+            fallback_vol = self._ultra_simple_portfolio_volatility(valid_weights)
+            if self.algorithm.Time.day == 1:
+                self.algorithm.Log(
+                    f"{self.name}: Weighted-vol fallback portfolio vol: {fallback_vol:.1%} "
+                    f"(gross exposure: {sum(abs(w) for w in valid_weights.values()):.1%})")
+            return fallback_vol
+
         except Exception as e:
             self.algorithm.Error(f"{self.name}: Error in var-cov portfolio volatility: {str(e)}")
+            self._last_portfolio_vol_method = 'error-fallback'
             return self._ultra_simple_portfolio_volatility(weights)
 
     def _ultra_simple_portfolio_volatility(self, weights):
@@ -902,8 +896,21 @@ class MTUMCTAStrategy(BaseStrategy):
     def debug_volatility_calculation(self):
         """Debug volatility calculation on first day of month."""
         try:
-            self.algorithm.Log(f"{self.name}: Monthly volatility debug - "
-                             f"Target: {self.target_volatility:.1%}, "
-                             f"Threshold: {self.momentum_threshold:.3f}")
+            self.algorithm.Log(
+                f"{self.name}: Monthly volatility debug - Target volatility: {self.target_volatility:.1%}")
         except Exception as e:
             self.algorithm.Error(f"{self.name}: Error in volatility debug: {str(e)}")
+
+    def _get_symbol_volatility(self, symbol):
+        """Return annualised volatility for the symbol using the 3-year weekly std indicator,
+        falling back to default asset-class vol if indicator isn't ready."""
+        try:
+            if symbol in self.volatility_indicators:
+                ind = self.volatility_indicators[symbol]
+                if ind.IsReady and ind.Current.Value > 0:
+                    # Weekly std – annualise (sqrt 52)
+                    return ind.Current.Value * math.sqrt(52)
+            # Fallback
+            return self._get_default_volatility(symbol)
+        except Exception:
+            return self._get_default_volatility(symbol)

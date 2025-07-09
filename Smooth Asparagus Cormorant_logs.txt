@@ -1,0 +1,1615 @@
+2013-09-18 00:00:00 Launching analysis for a1ffffa9d12e0cfb5bc59c6180893964 with LEAN Engine v2.5.0.0.17167
+2013-09-18 00:00:00 Warning: SetBenchmark(SPY): no existing symbol found, benchmark security will be added with Equity type.
+2013-09-18 00:00:00 Accurate daily end-times now enabled by default. See more at https://qnt.co/3YHaWHL. To disable it and use legacy daily bars set self.settings.daily_precise_end_time = False.
+2013-09-18 00:00:00 Algorithm starting warm up...
+2013-09-18 00:00:00 CONFIG MANAGER: Loading main configuration...
+2013-09-18 00:00:00 CONFIG MANAGER: Main configuration loaded successfully
+2013-09-18 00:00:00 CONFIG MANAGER: Period: 2017-01-01 to 2020-01-01
+2013-09-18 00:00:00 CONFIG MANAGER: Initial capital: $10,000,000
+2013-09-18 00:00:00 CONFIG MANAGER: Starting configuration validation and normalization...
+2013-09-18 00:00:00 CONFIG MANAGER: Enabled strategies found: ['MTUM_CTA']
+2013-09-18 00:00:00 CONFIG MANAGER: SINGLE STRATEGY MODE DETECTED: MTUM_CTA
+2013-09-18 00:00:00 CONFIG MANAGER: Single strategy will receive 100% allocation for testing
+2013-09-18 00:00:00 CONFIG MANAGER: Final normalized allocations: {'MTUM_CTA': 1.0}
+2013-09-18 00:00:00 CONFIG MANAGER: Allocation sum: 1.0000
+2013-09-18 00:00:00 CONFIG MANAGER: SINGLE STRATEGY MODE - Ignoring restrictive bounds
+2013-09-18 00:00:00 CONFIG MANAGER: Applied permissive bounds: {'MTUM_CTA': {'min': 0.0, 'max': 1.0}}
+2013-09-18 00:00:00 CONFIG MANAGER: Configuration validation and normalization completed successfully
+2013-09-18 00:00:00 CONFIG MANAGER: Applying ALL QuantConnect algorithm settings...
+2013-09-18 00:00:00 CONFIG APPLIED: SetCash($10,000,000)
+2013-09-18 00:00:00 CONFIG APPLIED: SetStartDate(2017-01-01 00:00:00)
+2013-09-18 00:00:00 CONFIG APPLIED: SetEndDate(2020-01-01 00:00:00)
+2013-09-18 00:00:00 CONFIG NOTED: Benchmark = SPY (SetBenchmark disabled for testing)
+2013-09-18 00:00:00 CONFIG APPLIED: SetBrokerageModel(InteractiveBrokers)
+2013-09-18 00:00:00 CONFIG APPLIED: SetWarmUp(80 days)
+2013-09-18 00:00:00 CONFIG INFO: Data starts 2016-10-13 00:00:00 (warmup period)
+2013-09-18 00:00:00 CONFIG INFO: Trading starts 2017-01-01 00:00:00 (after warmup completes)
+2013-09-18 00:00:00 CONFIG NOTED: Resolution = Daily
+2013-09-18 00:00:00 CONFIG NOTED: Timezone = America/New_York
+2013-09-18 00:00:00 CONFIG MANAGER: ALL QuantConnect settings applied successfully
+2013-09-18 00:00:00 CONFIG MANAGER: Verifying QuantConnect settings application...
+2013-09-18 00:00:00 CONFIG VERIFIED: Initial cash $10,000,000.0 matches config $10,000,000
+2013-09-18 00:00:00 CONFIG VERIFIED: Portfolio value $10,000,000.0
+2013-09-18 00:00:00 CONFIG VERIFIED: Single strategy mode - MTUM_CTA gets 100.0%
+2013-09-18 00:00:00 CONFIG VERIFIED: Warmup 80 days, expected end: unknown
+2013-09-18 00:00:00 CONFIG MANAGER: Configuration verification completed successfully
+2013-09-18 00:00:00 ================================================================================
+2013-09-18 00:00:00 CONFIG MANAGER: Three-Layer CTA Portfolio System v3.0
+2013-09-18 00:00:00 Description: Clean tier-based configuration system
+2013-09-18 00:00:00 Configuration: Simplified Main Config
+2013-09-18 00:00:00 Last Updated: N/A
+2013-09-18 00:00:00 STRATEGY MODE: Single Strategy Testing (MTUM_CTA)
+2013-09-18 00:00:00 SINGLE CONFIG AUTHORITY: All QuantConnect settings applied
+2013-09-18 00:00:00 SIMPLIFIED IMPORTS: No complex config variants
+2013-09-18 00:00:00 ================================================================================
+2013-09-18 00:00:00 CONFIG VALIDATION: Starting complete configuration validation...
+2013-09-18 00:00:00 ✓ Algorithm configuration validated
+2013-09-18 00:00:00 CONFIG: Loading universe with max priority: 2
+2013-09-18 00:00:00 CONFIG: Skipping expansion candidates per configuration
+2013-09-18 00:00:00 CONFIG: Processing nested futures structure
+2013-09-18 00:00:00 CONFIG SUCCESS: Loaded 3 symbols across 1 priority groups (max priority: 2)
+2013-09-18 00:00:00 ✓ Universe configuration validated (3 symbols)
+2013-09-18 00:00:00 ✓ Strategy 'MTUM_CTA' configuration validated
+2013-09-18 00:00:00 ✓ Risk management configuration validated
+2013-09-18 00:00:00 ✓ Execution configuration validated
+2013-09-18 00:00:00 ✓ Data integrity configuration validated
+2013-09-18 00:00:00 CONFIG VALIDATION: ALL CONFIGURATION VALIDATED SUCCESSFULLY
+2013-09-18 00:00:00 ================================================================================
+2013-09-18 00:00:00 CONFIGURATION AUDIT REPORT
+2013-09-18 00:00:00 ================================================================================
+2013-09-18 00:00:00 Algorithm: {'year': 2017, 'month': 1, 'day': 1} to {'year': 2020, 'month': 1, 'day': 1}
+2013-09-18 00:00:00 Initial Cash: $10,000,000.00
+2013-09-18 00:00:00 Resolution: Daily
+2013-09-18 00:00:00 Enabled Strategies: 1
+2013-09-18 00:00:00   - MTUM_CTA: MTUM Futures Adaptation - Preserves core MTUM methodology with futures market innovations
+2013-09-18 00:00:00 Target Portfolio Vol: 0.4
+2013-09-18 00:00:00 Max Leverage: 8.0
+2013-09-18 00:00:00 Strategy Allocations:
+2013-09-18 00:00:00   - MTUM_CTA: 100.0%
+2013-09-18 00:00:00 ================================================================================
+2013-09-18 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2013-09-18 00:00:00 CONFIG MANAGER: Calculated warmup period: 1201 days
+2013-09-18 00:00:00   - Base requirements: 1092 days
+2013-09-18 00:00:00   - Buffer multiplier: 1.1
+2013-09-18 00:00:00   - Enabled strategies: ['MTUM_CTA']
+2013-09-18 00:00:00 WARMUP: Set time-based warm-up for 1201 days at Daily resolution
+2013-09-18 00:00:00 WARMUP: Enabled automatic indicator warm-up
+2013-09-18 00:00:00 ============================================================
+2013-09-18 00:00:00 ENHANCED WARM-UP SYSTEM CONFIGURED
+2013-09-18 00:00:00 Method: time_based
+2013-09-18 00:00:00 Period: 1201 days
+2013-09-18 00:00:00 Resolution: Daily
+2013-09-18 00:00:00 Automatic Indicators: Enabled
+2013-09-18 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2013-09-18 00:00:00 Enabled Strategies: ['MTUM_CTA']
+2013-09-18 00:00:00 ============================================================
+2013-09-18 00:00:00 CentralizedDataValidator: Initialized (minimal logging mode)
+2013-09-18 00:00:00 ============================================================
+2013-09-18 00:00:00 INITIALIZING THREE-LAYER ORCHESTRATOR (FIXED)
+2013-09-18 00:00:00 ============================================================
+2013-09-18 00:00:00 LAYER 1: Initializing dynamic strategy loader...
+2013-09-18 00:00:00 LAYER 1: Dynamic Strategy Loader initialized
+2013-09-18 00:00:00 LAYER 1: Loading 1 enabled strategies...
+2013-09-18 00:00:00 MTUMCTA: Starting initialization for MTUM_CTA
+2013-09-18 00:00:00 MTUMCTA: Configuration loaded successfully
+2013-09-18 00:00:00 MTUM_CTA: No continuous contracts found in SecuritiesManager. Strategy will wait for OnSecuritiesChanged events.
+2013-09-18 00:00:00 MTUM_CTA: Setup complete - using QC native indicators + efficient var-cov matrix
+2013-09-18 00:00:00 MTUM_CTA: Using QC's automatic warmup system (1092 days)
+2013-09-18 00:00:00 MTUM_CTA: Setup 0 QC indicators + var-cov matrix
+2013-09-18 00:00:00 MTUM_CTA: Initialized 0 symbols with QC indicators
+2013-09-18 00:00:00 EfficientPortfolioVol: Initialized for 0 assets
+2013-09-18 00:00:00 MTUM_CTA: MTUM Futures Adaptation - [6, 12] month lookbacks, 20.0% vol target, LONG-SHORT mode, MAD scaling
+2013-09-18 00:00:00 MTUM_CTA: Futures innovations - Weighting: SIGNAL-STRENGTH, 3Y volatility: 1092d, Cov lookback: 126d
+2013-09-18 00:00:00 MTUM_CTA: Preserves MTUM DNA - Risk-adjusted momentum, dual-period analysis, ±3.0 std dev standardization
+2013-09-18 00:00:00 MTUMCTA: MTUM components initialized successfully
+2013-09-18 00:00:00 MTUM_CTA: Configuration loaded successfully
+2013-09-18 00:00:00 MTUM_CTA: Common config loaded - Target Vol: 20.0%, Max Position: 300.0%, Warmup: 1092 days
+2013-09-18 00:00:00 MTUM_CTA: MTUM Futures Adaptation - [6, 12] month lookbacks, 20.0% vol target, LONG-SHORT mode, MAD scaling
+2013-09-18 00:00:00 MTUM_CTA: Futures innovations - Weighting: SIGNAL-STRENGTH, 3Y volatility: 1092d, Cov lookback: 126d
+2013-09-18 00:00:00 MTUM_CTA: Preserves MTUM DNA - Risk-adjusted momentum, dual-period analysis, ±3.0 std dev standardization
+2013-09-18 00:00:00 MTUMCTA: Base strategy initialization completed
+2013-09-18 00:00:00 MTUMCTA: Strategy initialized successfully
+2013-09-18 00:00:00     MTUM_CTA: 20.0% vol, monthly, 300.0% max weight, module: src.strategies.mtum_cta_strategy
+2013-09-18 00:00:00   ✓ MTUM_CTA: Loaded successfully
+2013-09-18 00:00:00 LAYER 1: Loaded 1/1 strategies
+2013-09-18 00:00:00 LAYER 1: Successfully loaded 1 strategies
+2013-09-18 00:00:00   ✓ MTUM_CTA: CONFIG-COMPLIANT
+2013-09-18 00:00:00 LAYER 2: Initializing dynamic allocator...
+2013-09-18 00:00:00 LAYER 2: Allocator initialized with 1 strategies
+2013-09-18 00:00:00 LAYER 2: Config: lookback=63d, smoothing=70.0%, metric=sharpe_ratio
+2013-09-18 00:00:00   MTUM_CTA: 100.0% initial (bounds: 0.0%-100.0%)
+2013-09-18 00:00:00 LAYER 2: Allocation initialization complete
+2013-09-18 00:00:00 LAYER 2: Allocations: MTUM_CTA: 100.0%
+2013-09-18 00:00:00 LAYER 3: Initializing risk manager...
+2013-09-18 00:00:00 LayerThreeRiskManager: Initialized with target vol 40.0%, max leverage 8.0x
+2013-09-18 00:00:00 LAYER 3: Target vol: 40.0%, Min exposure: 3.0x
+2013-09-18 00:00:00 ============================================================
+2013-09-18 00:00:00 THREE-LAYER SYSTEM INITIALIZATION COMPLETE
+2013-09-18 00:00:00 ============================================================
+2013-09-18 00:00:00 Active Strategies: 1
+2013-09-18 00:00:00 Risk Target: 40.0%
+2013-09-18 00:00:00 System Status: READY
+2013-09-18 00:00:00 ============================================================
+2013-09-18 00:00:00 BadDataPositionManager: Initialized with targeted position management
+2013-09-18 00:00:00 Bad Data Position Strategies:
+2013-09-18 00:00:00   ES: HOLD
+2013-09-18 00:00:00   NQ: HOLD
+2013-09-18 00:00:00   ZN: HOLD
+2013-09-18 00:00:00   6E: FREEZE
+2013-09-18 00:00:00   6J: FREEZE
+2013-09-18 00:00:00   CL: HEDGE
+2013-09-18 00:00:00   GC: HOLD
+2013-09-18 00:00:00   YM: FREEZE
+2013-09-18 00:00:00   ZB: HOLD
+2013-09-18 00:00:00   VX: LIQUIDATE
+2013-09-18 00:00:00 ExecutionManager: QC Transactions ENABLED
+2013-09-18 00:00:00 ExecutionManager: QC OrderEvents ENABLED
+2013-09-18 00:00:00 ExecutionManager: Custom Fill Tracking DISABLED
+2013-09-18 00:00:00 CONFIG-COMPLIANT EXECUTION PARAMETERS:
+2013-09-18 00:00:00   Min trade value: $1,000 (from config)
+2013-09-18 00:00:00   Min weight change: 1.0% (from config)
+2013-09-18 00:00:00   Max single order: $50,000,000 (from config)
+2013-09-18 00:00:00 CONFIG-COMPLIANT RISK PARAMETERS:
+2013-09-18 00:00:00   Max single position: 3.0 (300%) (from config)
+2013-09-18 00:00:00   Daily stop loss: 20.0% (from config)
+2013-09-18 00:00:00   Target portfolio vol: 40.0% (from config)
+2013-09-18 00:00:00 CONFIG-COMPLIANT CONSTRAINT PARAMETERS:
+2013-09-18 00:00:00   Min capital: $5,000,000 (from config)
+2013-09-18 00:00:00   Initial capital: $10,000,000 (from config)
+2013-09-18 00:00:00 CAPITAL DIAGNOSTICS (CONFIG COMPARISON):
+2013-09-18 00:00:00   Current Portfolio Value: $10,000,000
+2013-09-18 00:00:00   Config Initial Capital: $10,000,000
+2013-09-18 00:00:00   Config Min Capital: $5,000,000
+2013-09-18 00:00:00   ✓ Capital matches config expectation
+2013-09-18 00:00:00   Cash: $10,000,000
+2013-09-18 00:00:00   Holdings: $0
+2013-09-18 00:00:00 ExecutionManager: Bad Data Position Manager integrated
+2013-09-18 00:00:00 MAIN: Setting up futures universe using QC native methods...
+2013-09-18 00:00:00 UNIVERSE: Setting up TWO-CONTRACT ARCHITECTURE for perfect rollover prices
+2013-09-18 00:00:00 DEBUG: universe_config keys: ['loading', 'simple_selection', 'futures', 'expansion_candidates', 'futures_config']
+2013-09-18 00:00:00 DEBUG: loading_config: {'max_priority': 2, 'include_expansion_candidates': False, 'exclude_problematic_symbols': ['6J']}
+2013-09-18 00:00:00 DEBUG: simple_selection: {'enabled': False, 'futures_list': ['ES', 'CL', 'GC'], 'description': 'Auto-generated from tier system'}
+2013-09-18 00:00:00 DEBUG: futures_config keys: ['equity', 'commodity']
+2013-09-18 00:00:00 DEBUG: max_priority: 2
+2013-09-18 00:00:00 DEBUG: excluded_symbols: ['6J']
+2013-09-18 00:00:00 UNIVERSE: Using PRIORITY-BASED filtering (max_priority=2)
+2013-09-18 00:00:00 UNIVERSE: Processing category 'equity' with 1 futures
+2013-09-18 00:00:00 UNIVERSE: Added ES (priority 1) from equity
+2013-09-18 00:00:00 UNIVERSE: Processing category 'commodity' with 2 futures
+2013-09-18 00:00:00 UNIVERSE: Added CL (priority 1) from commodity
+2013-09-18 00:00:00 UNIVERSE: Added GC (priority 1) from commodity
+2013-09-18 00:00:00 UNIVERSE: Priority filtering - max_priority=2, excluded=['6J']
+2013-09-18 00:00:00 UNIVERSE: Final futures list: ['ES', 'CL', 'GC']
+2013-09-18 00:00:00 UNIVERSE: Adding BOTH front month (offset=0) AND second month (offset=1) contracts
+2013-09-18 00:00:00 UNIVERSE: ES found in equity_index category, depth: 2
+2013-09-18 00:00:00 UNIVERSE: ES configured for 2 contract depth
+2013-09-18 00:00:00 UNIVERSE: Added ES FRONT -> /ES
+2013-09-18 00:00:00 UNIVERSE: Added ES DEPTH-1 -> /ES
+2013-09-18 00:00:00 UNIVERSE: CL found in energy category, depth: 2
+2013-09-18 00:00:00 UNIVERSE: CL configured for 2 contract depth
+2013-09-18 00:00:00 UNIVERSE: Added CL FRONT -> /CL
+2013-09-18 00:00:00 UNIVERSE: Added CL DEPTH-1 -> /CL
+2013-09-18 00:00:00 UNIVERSE: GC found in metals category, depth: 2
+2013-09-18 00:00:00 UNIVERSE: GC configured for 2 contract depth
+2013-09-18 00:00:00 UNIVERSE: Added GC FRONT -> /GC
+2013-09-18 00:00:00 UNIVERSE: Added GC DEPTH-1 -> /GC
+2013-09-18 00:00:00 UNIVERSE: CONFIGURABLE-DEPTH ARCHITECTURE - Successfully added 6 contracts
+2013-09-18 00:00:00 UNIVERSE: 3 front month + 3 additional contracts
+2013-09-18 00:00:00 UNIVERSE: Front month symbols: ['/ES', '/CL', '/GC']
+2013-09-18 00:00:00 UNIVERSE: /ES -> 1 additional: ['/ES']
+2013-09-18 00:00:00 UNIVERSE: /CL -> 1 additional: ['/CL']
+2013-09-18 00:00:00 UNIVERSE: /GC -> 1 additional: ['/GC']
+2013-09-18 00:00:00 UNIVERSE: Symbol mappings: 3 front->second mappings created
+2013-09-18 00:00:00 MAIN: Universe setup completed with 3 futures
+2013-09-18 00:00:00 SystemReporter: Initialized with professional analytics capabilities
+2013-09-18 00:00:00 PortfolioValuationManager: Initialized with QC native validation
+2013-09-18 00:00:00 ROLLOVER MANAGER: Initialized with QuantConnect official rollover pattern
+2013-09-18 00:00:00 Rebalancing schedule configured for DAILY DATA RESOLUTION (END-OF-DAY):
+2013-09-18 00:00:00   - Weekly: Rolling 7-day check at 11:30 PM (after daily bar)
+2013-09-18 00:00:00   - Monthly: Month end at 11:45 PM (after daily bar completion)
+2013-09-18 00:00:00   - Daily: Contract validation at 11:00 PM (after daily bar completion)
+2013-09-18 00:00:00   - PREVENTS STALE FILLS: Uses actual daily closing prices, not previous day's prices
+2013-09-18 00:00:00   - Daily bars complete around 6 PM for futures, scheduling at 11+ PM ensures fresh data
+2013-09-18 00:00:00 CHARTS: Initialized strategy allocation tracking for 1 strategies: ['MTUM_CTA']
+2013-09-18 00:00:00 ================================================================================
+2013-09-18 00:00:00 THREE-LAYER CTA PORTFOLIO ALGORITHM INITIALIZED SUCCESSFULLY
+2013-09-18 00:00:00 ================================================================================
+2013-09-18 00:00:00 ROLLOVER WARNING: ES VK2ZRH843Z7L not found in Securities collection – skipping event.
+2013-09-18 00:00:00 QC Added: Continuous contract /CL
+2013-09-18 00:00:00 QC Added: Continuous contract /ES
+2013-09-18 00:00:00 QC Added: Continuous contract /GC
+2013-09-18 00:00:00 MTUM_CTA: Indicators set up for new symbol /CL
+2013-09-18 00:00:00 MTUM_CTA: Added continuous contract /CL
+2013-09-18 00:00:00 MTUM_CTA: Indicators set up for new symbol /ES
+2013-09-18 00:00:00 MTUM_CTA: Added continuous contract /ES
+2013-09-18 00:00:00 MTUM_CTA: Indicators set up for new symbol /GC
+2013-09-18 00:00:00 MTUM_CTA: Added continuous contract /GC
+2013-09-18 00:00:00 WARMUP: First data received - starting warm-up tracking
+2013-09-18 00:00:00 WARMUP ROLLOVER: ES VK2ZRH843Z7L -> ES VMKLFZIH2MTD (Event #2)
+2013-09-18 00:00:00 WARMUP PROGRESS: 0.0% (0/1201 days)
+2013-09-19 00:00:00 Contract validation: 3 valid, 0 invalid
+2013-09-19 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2013-09-19 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2013-09-18, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2013-10-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2013-10-17 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2013-10-17 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2013-10-16, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2013-11-14 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2013-11-14 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2013-11-13, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2013-12-12 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2013-12-12 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2013-12-11, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2013-12-12 00:00:00 WARMUP ROLLOVER SUMMARY: 10 total events
+2013-12-12 00:00:00 WARMUP PROGRESS: 7.1% (85/1201 days)
+2014-01-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2014-01-09 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-01-09 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-01-08, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-02-06 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-02-06 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-02-05, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-02-13 00:00:00 WARMUP ROLLOVER SUMMARY: 20 total events
+2014-02-13 00:00:00 WARMUP PROGRESS: 12.3% (148/1201 days)
+2014-03-06 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-03-06 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-03-05, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-03-31 00:00:00 WARMUP ROLLOVER SUMMARY: 30 total events
+2014-04-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2014-04-03 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-04-03 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-04-02, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-05-01 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-05-01 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-04-30, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-05-29 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-05-29 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-05-28, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-06-12 00:00:00 WARMUP PROGRESS: 22.2% (267/1201 days)
+2014-06-26 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-06-26 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-06-25, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-07-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2014-07-24 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-07-24 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-07-23, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-08-05 00:00:00 WARMUP ROLLOVER SUMMARY: 50 total events
+2014-08-21 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-08-21 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-08-20, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-09-12 00:00:00 WARMUP PROGRESS: 29.9% (359/1201 days)
+2014-09-18 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-09-18 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-09-17, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-10-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2014-10-16 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-10-16 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-10-15, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-10-22 00:00:00 WARMUP ROLLOVER SUMMARY: 60 total events
+2014-11-13 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-11-13 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-11-12, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-12-11 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2014-12-11 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2014-12-10, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2014-12-12 00:00:00 WARMUP PROGRESS: 37.5% (450/1201 days)
+2014-12-29 00:00:00 WARMUP ROLLOVER SUMMARY: 70 total events
+2015-01-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2015-01-08 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-01-08 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-01-07, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-02-05 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-02-05 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-02-04, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-02-12 00:00:00 WARMUP PROGRESS: 42.6% (512/1201 days)
+2015-03-05 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-03-05 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-03-04, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-03-11 00:00:00 WARMUP ROLLOVER SUMMARY: 80 total events
+2015-04-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2015-04-02 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-04-02 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-04-01, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-04-28 00:00:00 WARMUP PROGRESS: 48.9% (587/1201 days)
+2015-04-30 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-04-30 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-04-29, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-05-11 00:00:00 WARMUP ROLLOVER SUMMARY: 90 total events
+2015-05-28 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-05-28 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-05-27, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-06-25 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-06-25 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-06-24, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-07-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2015-07-10 00:00:00 WARMUP ROLLOVER SUMMARY: 100 total events
+2015-07-10 00:00:00 WARMUP PROGRESS: 55.0% (660/1201 days)
+2015-07-23 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-07-23 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-07-22, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-08-20 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-08-20 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-08-19, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-09-11 00:00:00 WARMUP PROGRESS: 60.2% (723/1201 days)
+2015-09-16 00:00:00 WARMUP ROLLOVER SUMMARY: 110 total events
+2015-09-17 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-09-17 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-09-16, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-10-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2015-10-15 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-10-15 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-10-14, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-11-12 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-11-12 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-11-11, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-11-12 00:00:00 WARMUP PROGRESS: 65.4% (785/1201 days)
+2015-12-10 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2015-12-10 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2015-12-09, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2015-12-14 00:00:00 WARMUP ROLLOVER SUMMARY: 120 total events
+2016-01-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2016-01-07 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-01-07 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-01-06, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2016-02-04 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-02-04 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-02-03, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2016-02-12 00:00:00 WARMUP PROGRESS: 73.0% (877/1201 days)
+2016-03-03 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-03-03 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-03-02, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2016-03-31 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-03-31 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-03-30, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2016-04-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2016-04-12 00:00:00 WARMUP ROLLOVER SUMMARY: 140 total events
+2016-04-18 00:00:00 WARMUP PROGRESS: 78.5% (943/1201 days)
+2016-04-28 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-04-28 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-04-27, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2016-05-26 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-05-26 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-05-25, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2016-06-15 00:00:00 WARMUP ROLLOVER SUMMARY: 150 total events
+2016-06-23 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-06-23 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-06-22, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2016-07-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2016-07-11 00:00:00 WARMUP PROGRESS: 85.5% (1027/1201 days)
+2016-07-21 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-07-21 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-07-20, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2016-08-18 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-08-18 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-08-17, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2016-09-12 00:00:00 WARMUP ROLLOVER SUMMARY: 160 total events
+2016-09-12 00:00:00 WARMUP PROGRESS: 90.8% (1090/1201 days)
+2016-09-15 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-09-15 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-09-14, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2016-10-01 00:00:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2016-10-13 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-10-13 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-10-12, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2016-11-10 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-11-10 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-11-09, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2016-11-11 00:00:00 WARMUP ROLLOVER SUMMARY: 170 total events
+2016-12-07 00:00:00 WARMUP PROGRESS: 97.9% (1176/1201 days)
+2016-12-08 00:00:00 CONFIG: Strategy MTUM_CTA requires 1092 warmup days
+2016-12-08 00:00:00 REBALANCE SKIPPED: Still warming up - Current: 2016-12-07, IsWarmingUp: True, MaxDays: 1201, Method: time_based
+2017-01-01 16:06:00 WARMUP PROGRESS: 0.0% (0/831 days) - Monthly reports disabled during warmup
+2017-01-03 00:00:00 Algorithm finished warming up.
+2017-01-03 00:00:00 ================================================================================
+2017-01-03 00:00:00 WARM-UP PERIOD COMPLETED - VALIDATING SYSTEM READINESS
+2017-01-03 00:00:00 ================================================================================
+2017-01-03 00:00:00 CONFIG MANAGER: No indicator validation required for MTUM_CTA
+2017-01-03 00:00:00 WARMUP VALIDATION: MTUM_CTA indicators ready
+2017-01-03 00:00:00 WARMUP VALIDATION: 1 strategies loaded
+2017-01-03 00:00:00 WARMUP VALIDATION: Strategy names: ['MTUM_CTA']
+2017-01-03 00:00:00 WARMUP VALIDATION: Strategies ready for trading
+2017-01-03 00:00:00 WARMUP VALIDATION: 3 futures symbols in universe
+2017-01-03 00:00:00 WARMUP VALIDATION: 3/3 symbols have data
+2017-01-03 00:00:00 WARMUP VALIDATION: All symbols have data - universe ready
+2017-01-03 00:00:00 WARMUP COMPLETION STATUS:
+2017-01-03 00:00:00   - Algorithm Time: 2017-01-01 16:06:00
+2017-01-03 00:00:00   - Is Warming Up: False
+2017-01-03 00:00:00   - Portfolio Value: $10,000,000.00
+2017-01-03 00:00:00   - Available Cash: $10,000,000.00
+2017-01-03 00:00:00   - Universe Size: 3 futures
+2017-01-03 00:00:00 ================================================================================
+2017-01-03 00:00:00 SYSTEM IS READY FOR LIVE TRADING
+2017-01-03 00:00:00 ================================================================================
+2017-01-03 00:00:00 Contract validation healthy: 3 valid, all contracts operational
+2017-01-05 00:00:00 MTUM_CTA: /CL 6M - Raw: 0.020, Ann: 0.040, Vol: 0.388, Risk-Adj: 0.103
+2017-01-05 00:00:00 MTUM_CTA: /CL 12M - Raw: 0.064, Ann: 0.064, Vol: 0.388, Risk-Adj: 0.166
+2017-01-05 00:00:00 MTUM_CTA: /ES 6M - Raw: 0.074, Ann: 0.153, Vol: 0.130, Risk-Adj: 1.177
+2017-01-05 00:00:00 MTUM_CTA: /ES 12M - Raw: 0.220, Ann: 0.220, Vol: 0.130, Risk-Adj: 1.693
+2017-01-05 00:00:00 MTUM_CTA: /GC 6M - Raw: -0.154, Ann: -0.285, Vol: 0.143, Risk-Adj: -1.999
+2017-01-05 00:00:00 MTUM_CTA: /GC 12M - Raw: 0.070, Ann: 0.070, Vol: 0.143, Risk-Adj: 0.492
+2017-01-05 00:00:00 MTUM_CTA-MAD: /CL | raw=0.135, scalar=12.914, scaled=1.737, capped=1.737, forecast=0.058
+2017-01-05 00:00:00 MTUM_CTA-MAD: /ES | raw=1.435, scalar=12.914, scaled=18.532, capped=18.532, forecast=0.618
+2017-01-05 00:00:00 MTUM_CTA-MAD: /GC | raw=-0.753, scalar=12.914, scaled=-9.731, capped=-9.731, forecast=-0.324
+2017-01-05 00:00:00 LAYER 3: Dynamic target vol (warm-up) 80.0% using fallback multiplier 2.0
+2017-01-05 00:00:00 ==================================================
+2017-01-05 00:00:00 EXECUTING WEEKLY REBALANCE
+2017-01-05 00:00:00 ==================================================
+2017-01-05 00:00:00 === THREE-LAYER WEEKLY REBALANCE ===
+2017-01-05 00:00:00 LAYER 1: MTUM_CTA - AVAILABLE
+2017-01-05 00:00:00 LAYER 1: All 1/1 strategies available
+2017-01-05 00:00:00 MTUM_CTA: MAD weighting - Net: 35.1%, Gross: 100.0%
+2017-01-05 00:00:00 MTUM_CTA: Generated 3 signals across 3 assets
+2017-01-05 00:00:00 MTUM_CTA: Volatility targeting - Current 12.6% (method: varcov), Target 20.0%, Scale 1.59
+2017-01-05 00:00:00 MTUM_CTA: Final targets: {'/CL': 0.09192111849068943, '/ES': 0.9805346721259032, '/GC': -0.514845796684995}
+2017-01-05 00:00:00 LAYER 1: MTUM_CTA generated 3 targets: ['/CL', '/ES', '/GC']
+2017-01-05 00:00:00 LAYER 1: Generated 3 total signals from 1/1 strategies
+2017-01-05 00:00:00 LAYER 2: Executing weekly allocation...
+2017-01-05 00:00:00 LAYER 2: Insufficient track record, maintaining allocations
+2017-01-05 00:00:00 LAYER 2: Current allocations: MTUM_CTA: 100.0%
+2017-01-05 00:00:00 LAYER 2: Used 1 strategies with signals: MTUM_CTA
+2017-01-05 00:00:00 LAYER 2: Total allocation used: 100.0%
+2017-01-05 00:00:00   Allocations unchanged
+2017-01-05 00:00:00   Current allocations: MTUM_CTA: 100.0%
+2017-01-05 00:00:00   Combined (weekly): 3 positions, Gross: 158.7%, Net: 0.56
+2017-01-05 00:00:00 CHARTS: Strategy allocations updated - MTUM_CTA: 100.0%
+2017-01-05 00:00:00 LAYER 2: Combined to 3 positions
+2017-01-05 00:00:00 LAYER 2: Gross: 158.7%, Net: 55.8%
+2017-01-05 00:00:00 LAYER 3: Applying risk management to 3 positions
+2017-01-05 00:00:00 LAYER 3: Basic volatility (insufficient): 21.5%
+2017-01-05 00:00:00 LAYER 3: Vol targeting (insufficient): 21.5% -> 80.0% (scaling: 3.72x)
+2017-01-05 00:00:00 LAYER 3: Position limit applied to /ES: 364.3% -> 300.0%
+2017-01-05 00:00:00 LAYER 3 ENHANCED RISK SUMMARY:
+2017-01-05 00:00:00   Input gross exposure: 158.7%
+2017-01-05 00:00:00   Final gross exposure: 525.4%
+2017-01-05 00:00:00   Risk scaling applied: 3.31x
+2017-01-05 00:00:00   Estimated portfolio vol: 21.5%
+2017-01-05 00:00:00   Target portfolio vol: 40.0%
+2017-01-05 00:00:00   Data quality: insufficient
+2017-01-05 00:00:00   Current drawdown: 0.0%
+2017-01-05 00:00:00 === WEEKLY REBALANCE COMPLETE ===
+2017-01-05 00:00:00 ============================================================
+2017-01-05 00:00:00 EXECUTION MANAGER: Starting config-compliant rebalance execution
+2017-01-05 00:00:00 ============================================================
+2017-01-05 00:00:00 EXECUTION INPUT:
+2017-01-05 00:00:00   Rebalance Type: weekly
+2017-01-05 00:00:00   Final Targets: 3 positions
+2017-01-05 00:00:00     /CL: 34.1%
+2017-01-05 00:00:00     /ES: 300.0%
+2017-01-05 00:00:00     /GC: -191.3%
+2017-01-05 00:00:00 EXECUTION: Processing 3 target positions...
+2017-01-05 00:00:00 EXECUTION VALIDATION: Using CONFIG-COMPLIANT validation
+2017-01-05 00:00:00 CONFIG VALIDATION PASSED:
+2017-01-05 00:00:00   Positions: 3 (max: 20)
+2017-01-05 00:00:00   Gross exposure: 525.4%
+2017-01-05 00:00:00   Max position: 300.0% (limit: 300.0%)
+2017-01-05 00:00:00   Capital: $10,000,000.0 (min: $5,000,000)
+2017-01-05 00:00:00 EXECUTION: Portfolio value for calculations: $10,000,000
+2017-01-05 00:00:00 EXECUTION: /CL -> CL WHEA9CRPAVGH for execution
+2017-01-05 00:00:00 EXECUTION: /ES -> ES WIXFAL95L5OH for execution
+2017-01-05 00:00:00 EXECUTION: /GC -> GC WICQWMKLZB8D for execution
+2017-01-05 00:00:00   Executing 3/3 symbols with valid data
+2017-01-05 00:00:00 EXECUTING: /CL target 34.1%
+2017-01-05 00:00:00   EXECUTING /CL (/CL):
+2017-01-05 00:00:00     Price: $53.35
+2017-01-05 00:00:00     Current: 0.0% ($0)
+2017-01-05 00:00:00     Target:  34.1%
+2017-01-05 00:00:00     Weight diff: 34.149% (config min: 1.000%)
+2017-01-05 00:00:00     Target value: $3,414,915
+2017-01-05 00:00:00     Trade value:  $+3,414,915
+2017-01-05 00:00:00     Multiplier: 1000.0
+2017-01-05 00:00:00     Quantity: +64 contracts
+2017-01-05 00:00:00     PLACING ORDER: +64 contracts of CL WHEA9CRPAVGH
+2017-01-05 00:00:00 ORDER FILLED: CL WHEA9CRPAVGH +64 @ $53.36 ($+3,415)
+2017-01-05 00:00:00     ✓ ORDER PLACED: /CL +64 contracts ($+3,414,915)
+2017-01-05 00:00:00 EXECUTING: /ES target 300.0%
+2017-01-05 00:00:00   EXECUTING /ES (/ES):
+2017-01-05 00:00:00     Price: $2264.38
+2017-01-05 00:00:00     Current: 0.0% ($0)
+2017-01-05 00:00:00     Target:  300.0%
+2017-01-05 00:00:00     Weight diff: 300.000% (config min: 1.000%)
+2017-01-05 00:00:00     Target value: $30,000,000
+2017-01-05 00:00:00     Trade value:  $+30,000,000
+2017-01-05 00:00:00     Multiplier: 50.0
+2017-01-05 00:00:00     Quantity: +264 contracts
+2017-01-05 00:00:00     PLACING ORDER: +264 contracts of ES WIXFAL95L5OH
+2017-01-05 00:00:00 ORDER FILLED: ES WIXFAL95L5OH +264 @ $2264.50 ($+597,828)
+2017-01-05 00:00:00     ✓ ORDER PLACED: /ES +264 contracts ($+30,000,000)
+2017-01-05 00:00:00 EXECUTING: /GC target -191.3%
+2017-01-05 00:00:00   EXECUTING /GC (/GC):
+2017-01-05 00:00:00     Price: $1164.15
+2017-01-05 00:00:00     Current: 0.0% ($0)
+2017-01-05 00:00:00     Target:  -191.3%
+2017-01-05 00:00:00     Weight diff: 191.268% (config min: 1.000%)
+2017-01-05 00:00:00     Target value: $-19,126,775
+2017-01-05 00:00:00     Trade value:  $-19,126,775
+2017-01-05 00:00:00     Multiplier: 100.0
+2017-01-05 00:00:00     Quantity: -164 contracts
+2017-01-05 00:00:00     PLACING ORDER: -164 contracts of GC WICQWMKLZB8D
+2017-01-05 00:00:00 ORDER FILLED: GC WICQWMKLZB8D -164 @ $1164.00 ($-190,896)
+2017-01-05 00:00:00     ✓ ORDER PLACED: /GC -164 contracts ($-19,126,775)
+2017-01-05 00:00:00   KEEPING: ES WIXFAL95L5OH (mapped from /ES)
+2017-01-05 00:00:00   KEEPING: GC WICQWMKLZB8D (mapped from /GC)
+2017-01-05 00:00:00   KEEPING: CL WHEA9CRPAVGH (mapped from /CL)
+2017-01-05 00:00:00 CONFIG-COMPLIANT EXECUTION DIAGNOSTICS:
+2017-01-05 00:00:00   Orders Placed: 3
+2017-01-05 00:00:00   Liquidations: 0
+2017-01-05 00:00:00   Execution Errors: 0
+2017-01-05 00:00:00   Total Trade Value: $52,541,690
+2017-01-05 00:00:00 CONFIG PARAMETERS USED:
+2017-01-05 00:00:00   Min trade value: $1,000
+2017-01-05 00:00:00   Min weight change: 1.0%
+2017-01-05 00:00:00   SUCCESSFUL TRADES:
+2017-01-05 00:00:00     /CL: +64 contracts ($+3,414,915)
+2017-01-05 00:00:00     /ES: +264 contracts ($+30,000,000)
+2017-01-05 00:00:00     /GC: -164 contracts ($-19,126,775)
+2017-01-05 00:00:00 WEEKLY EXECUTION: 3 orders, 0 liquidations
+2017-01-05 00:00:00   Total trade value: $52,541,690
+2017-01-05 00:00:00   Portfolio value: $9,988,878
+2017-01-05 00:00:00 TOP POSITIONS: /ES: +300.0%, /GC: -191.3%, /CL: +34.1%
+2017-01-05 00:00:00 ============================================================
+2017-01-05 00:00:00 EXECUTION MANAGER: Config-compliant rebalance execution complete
+2017-01-05 00:00:00 ============================================================
+2017-01-05 00:00:00 Weekly rebalance complete: 3 targets executed
+2017-01-05 17:00:00 Portfolio positions: 0 -> 3 (3 valid)
+2017-01-06 17:00:00 Portfolio healthy: 3 positions, all valid
+2017-01-09 00:00:00 Contract validation healthy: 3 valid, all contracts operational
+2017-01-11 00:00:00 ROLLOVER: Successfully added new contract CL WI9SKCH3R0LD
+2017-01-11 00:00:00 ROLLOVER DETECTED: CL WHEA9CRPAVGH -> CL WI9SKCH3R0LD (scheduled for market close)
+2017-01-11 00:00:00 ROLLOVER: CL -> CL (#180)
+2017-01-11 09:44:00 ROLLOVER: Successfully added new contract CL WI9SKCH3R0LD
+2017-01-11 09:44:00 ROLLOVER DETECTED: CL WHEA9CRPAVGH -> CL WI9SKCH3R0LD (scheduled for market close)
+2017-01-11 09:44:00 QC Added: Underlying contract CL WI9SKCH3R0LD
+2017-01-11 09:44:00 MTUM_CTA: Ignoring underlying contract CL WI9SKCH3R0LD
+2017-01-11 09:44:00 ROLLOVER: CL -> CL (#182)
+2017-01-11 16:30:00 EXECUTING ROLLOVER: CL WHEA9CRPAVGH -> CL WI9SKCH3R0LD
+2017-01-11 16:30:00 ORDER FILLED: CL WHEA9CRPAVGH -64 @ $50.77 ($-3,249)
+2017-01-11 16:30:00 ORDER FILLED: CL WI9SKCH3R0LD +64 @ $53.18 ($+3,404)
+2017-01-11 16:30:00   Closed old position: CL WHEA9CRPAVGH
+2017-01-11 16:30:00   New contract price: $53.17
+2017-01-11 16:30:00   ROLLOVER SUCCESS: CL WHEA9CRPAVGH -> CL WI9SKCH3R0LD (64.0 contracts)
+2017-01-11 16:30:00     Close Orders: 1 tickets
+2017-01-11 16:30:00     Open Order ID: 5, Status: 3
+2017-01-11 16:30:00 ============================================================
+2017-01-11 16:30:00 ROLLOVER SKIPPED: No remaining position in CL WHEA9CRPAVGH (duplicate event)
+2017-01-12 00:00:00 ==================================================
+2017-01-12 00:00:00 EXECUTING WEEKLY REBALANCE
+2017-01-12 00:00:00 ==================================================
+2017-01-12 00:00:00 === THREE-LAYER WEEKLY REBALANCE ===
+2017-01-12 00:00:00 LAYER 1: MTUM_CTA - AVAILABLE
+2017-01-12 00:00:00 LAYER 1: All 1/1 strategies available
+2017-01-12 00:00:00 LAYER 1: MTUM_CTA generated 3 targets: ['/CL', '/ES', '/GC']
+2017-01-12 00:00:00 LAYER 1: Generated 3 total signals from 1/1 strategies
+2017-01-12 00:00:00 LAYER 2: Executing weekly allocation...
+2017-01-12 00:00:00 LAYER 2: Insufficient track record, maintaining allocations
+2017-01-12 00:00:00 LAYER 2: Current allocations: MTUM_CTA: 100.0%
+2017-01-12 00:00:00 LAYER 2: Used 1 strategies with signals: MTUM_CTA
+2017-01-12 00:00:00 LAYER 2: Total allocation used: 100.0%
+2017-01-12 00:00:00   Allocations unchanged
+2017-01-12 00:00:00   Current allocations: MTUM_CTA: 100.0%
+2017-01-12 00:00:00   Combined (weekly): 3 positions, Gross: 158.7%, Net: 0.56
+2017-01-12 00:00:00 CHARTS: Strategy allocations updated - MTUM_CTA: 100.0%
+2017-01-12 00:00:00 LAYER 2: Combined to 3 positions
+2017-01-12 00:00:00 LAYER 2: Gross: 158.7%, Net: 55.8%
+2017-01-12 00:00:00 LAYER 3: Applying risk management to 3 positions
+2017-01-12 00:00:00 LAYER 3: Basic volatility (insufficient): 21.5%
+2017-01-12 00:00:00 LAYER 3: Vol targeting (insufficient): 21.5% -> 80.0% (scaling: 3.72x)
+2017-01-12 00:00:00 LAYER 3: Position limit applied to /ES: 364.3% -> 300.0%
+2017-01-12 00:00:00 LAYER 3 ENHANCED RISK SUMMARY:
+2017-01-12 00:00:00   Input gross exposure: 158.7%
+2017-01-12 00:00:00   Final gross exposure: 525.4%
+2017-01-12 00:00:00   Risk scaling applied: 3.31x
+2017-01-12 00:00:00   Estimated portfolio vol: 21.5%
+2017-01-12 00:00:00   Target portfolio vol: 40.0%
+2017-01-12 00:00:00   Data quality: insufficient
+2017-01-12 00:00:00   Current drawdown: 5.7%
+2017-01-12 00:00:00 === WEEKLY REBALANCE COMPLETE ===
+2017-01-12 00:00:00 ============================================================
+2017-01-12 00:00:00 EXECUTION MANAGER: Starting config-compliant rebalance execution
+2017-01-12 00:00:00 ============================================================
+2017-01-12 00:00:00 EXECUTION INPUT:
+2017-01-12 00:00:00   Rebalance Type: weekly
+2017-01-12 00:00:00   Final Targets: 3 positions
+2017-01-12 00:00:00     /CL: 34.1%
+2017-01-12 00:00:00     /ES: 300.0%
+2017-01-12 00:00:00     /GC: -191.3%
+2017-01-12 00:00:00 EXECUTION: Processing 3 target positions...
+2017-01-12 00:00:00 EXECUTION VALIDATION: Using CONFIG-COMPLIANT validation
+2017-01-12 00:00:00 CONFIG VALIDATION PASSED:
+2017-01-12 00:00:00   Positions: 3 (max: 20)
+2017-01-12 00:00:00   Gross exposure: 525.4%
+2017-01-12 00:00:00   Max position: 300.0% (limit: 300.0%)
+2017-01-12 00:00:00   Capital: $9,429,802.32 (min: $5,000,000)
+2017-01-12 00:00:00 EXECUTION: Portfolio value for calculations: $9,429,802
+2017-01-12 00:00:00 EXECUTION: /CL -> CL WI9SKCH3R0LD for execution
+2017-01-12 00:00:00 EXECUTION: /ES -> ES WIXFAL95L5OH for execution
+2017-01-12 00:00:00 EXECUTION: /GC -> GC WICQWMKLZB8D for execution
+2017-01-12 00:00:00   Executing 3/3 symbols with valid data
+2017-01-12 00:00:00 EXECUTING: /CL target 34.1%
+2017-01-12 00:00:00   EXECUTING /CL (/CL):
+2017-01-12 00:00:00     Price: $53.19
+2017-01-12 00:00:00     Current: 36.1% ($3,404,160)
+2017-01-12 00:00:00     Target:  34.1%
+2017-01-12 00:00:00     Weight diff: 1.951% (config min: 1.000%)
+2017-01-12 00:00:00     Target value: $3,220,197
+2017-01-12 00:00:00     Trade value:  $-183,963
+2017-01-12 00:00:00     Multiplier: 1000.0
+2017-01-12 00:00:00     Quantity: -3 contracts
+2017-01-12 00:00:00     PLACING ORDER: -3 contracts of CL WI9SKCH3R0LD
+2017-01-12 00:00:00 ORDER FILLED: CL WI9SKCH3R0LD -3 @ $53.18 ($-160)
+2017-01-12 00:00:00     ✓ ORDER PLACED: /CL -3 contracts ($-183,963)
+2017-01-12 00:00:00 EXECUTING: /ES target 300.0%
+2017-01-12 00:00:00   EXECUTING /ES (/ES):
+2017-01-12 00:00:00     Price: $2263.88
+2017-01-12 00:00:00     Current: 316.9% ($29,883,150)
+2017-01-12 00:00:00     Target:  300.0%
+2017-01-12 00:00:00     Weight diff: 16.901% (config min: 1.000%)
+2017-01-12 00:00:00     Target value: $28,289,407
+2017-01-12 00:00:00     Trade value:  $-1,593,743
+2017-01-12 00:00:00     Multiplier: 50.0
+2017-01-12 00:00:00     Quantity: -14 contracts
+2017-01-12 00:00:00     PLACING ORDER: -14 contracts of ES WIXFAL95L5OH
+2017-01-12 00:00:00 ORDER FILLED: ES WIXFAL95L5OH -14 @ $2263.75 ($-31,692)
+2017-01-12 00:00:00     ✓ ORDER PLACED: /ES -14 contracts ($-1,593,743)
+2017-01-12 00:00:00 EXECUTING: /GC target -191.3%
+2017-01-12 00:00:00   EXECUTING /GC (/GC):
+2017-01-12 00:00:00     Price: $1187.75
+2017-01-12 00:00:00     Current: -206.6% ($-19,479,100)
+2017-01-12 00:00:00     Target:  -191.3%
+2017-01-12 00:00:00     Weight diff: 15.302% (config min: 1.000%)
+2017-01-12 00:00:00     Target value: $-18,036,171
+2017-01-12 00:00:00     Trade value:  $+1,442,929
+2017-01-12 00:00:00     Multiplier: 100.0
+2017-01-12 00:00:00     Quantity: +12 contracts
+2017-01-12 00:00:00     PLACING ORDER: +12 contracts of GC WICQWMKLZB8D
+2017-01-12 00:00:00 ORDER FILLED: GC WICQWMKLZB8D +12 @ $1187.90 ($+14,255)
+2017-01-12 00:00:00     ✓ ORDER PLACED: /GC +12 contracts ($+1,442,929)
+2017-01-12 00:00:00   KEEPING: CL WI9SKCH3R0LD (mapped from /CL)
+2017-01-12 00:00:00   KEEPING: ES WIXFAL95L5OH (mapped from /ES)
+2017-01-12 00:00:00   KEEPING: GC WICQWMKLZB8D (mapped from /GC)
+2017-01-12 00:00:00 CONFIG-COMPLIANT EXECUTION DIAGNOSTICS:
+2017-01-12 00:00:00   Orders Placed: 3
+2017-01-12 00:00:00   Liquidations: 0
+2017-01-12 00:00:00   Execution Errors: 0
+2017-01-12 00:00:00   Total Trade Value: $3,220,635
+2017-01-12 00:00:00 CONFIG PARAMETERS USED:
+2017-01-12 00:00:00   Min trade value: $1,000
+2017-01-12 00:00:00   Min weight change: 1.0%
+2017-01-12 00:00:00   SUCCESSFUL TRADES:
+2017-01-12 00:00:00     /CL: -3 contracts ($-183,963)
+2017-01-12 00:00:00     /ES: -14 contracts ($-1,593,743)
+2017-01-12 00:00:00     /GC: +12 contracts ($+1,442,929)
+2017-01-12 00:00:00 WEEKLY EXECUTION: 3 orders, 0 liquidations
+2017-01-12 00:00:00   Total trade value: $3,220,635
+2017-01-12 00:00:00   Portfolio value: $9,429,802
+2017-01-12 00:00:00 TOP POSITIONS: /ES: +300.0%, /GC: -191.3%, /CL: +34.1%
+2017-01-12 00:00:00 ============================================================
+2017-01-12 00:00:00 EXECUTION MANAGER: Config-compliant rebalance execution complete
+2017-01-12 00:00:00 ============================================================
+2017-01-12 00:00:00 Weekly rebalance complete: 3 targets executed
+2017-01-13 17:00:00 Portfolio healthy: 3 positions, all valid
+2017-01-16 00:00:00 Contract validation healthy: 3 valid, all contracts operational
+2017-01-19 00:00:00 ==================================================
+2017-01-19 00:00:00 EXECUTING WEEKLY REBALANCE
+2017-01-19 00:00:00 ==================================================
+2017-01-19 00:00:00 === THREE-LAYER WEEKLY REBALANCE ===
+2017-01-19 00:00:00 LAYER 1: MTUM_CTA - AVAILABLE
+2017-01-19 00:00:00 LAYER 1: All 1/1 strategies available
+2017-01-19 00:00:00 LAYER 1: MTUM_CTA generated 3 targets: ['/CL', '/ES', '/GC']
+2017-01-19 00:00:00 LAYER 1: Generated 3 total signals from 1/1 strategies
+2017-01-19 00:00:00 LAYER 2: Executing weekly allocation...
+2017-01-19 00:00:00 LAYER 2: Insufficient track record, maintaining allocations
+2017-01-19 00:00:00 LAYER 2: Current allocations: MTUM_CTA: 100.0%
+2017-01-19 00:00:00 LAYER 2: Used 1 strategies with signals: MTUM_CTA
+2017-01-19 00:00:00 LAYER 2: Total allocation used: 100.0%
+2017-01-19 00:00:00   Allocations unchanged
+2017-01-19 00:00:00   Current allocations: MTUM_CTA: 100.0%
+2017-01-19 00:00:00   Combined (weekly): 3 positions, Gross: 158.7%, Net: 0.56
+2017-01-19 00:00:00 CHARTS: Strategy allocations updated - MTUM_CTA: 100.0%
+2017-01-19 00:00:00 LAYER 2: Combined to 3 positions
+2017-01-19 00:00:00 LAYER 2: Gross: 158.7%, Net: 55.8%
+2017-01-19 00:00:00 LAYER 3: Applying risk management to 3 positions
+2017-01-19 00:00:00 LAYER 3: Basic volatility (insufficient): 21.5%
+2017-01-19 00:00:00 LAYER 3: Vol targeting (insufficient): 21.5% -> 80.0% (scaling: 3.72x)
+2017-01-19 00:00:00 LAYER 3: Position limit applied to /ES: 364.3% -> 300.0%
+2017-01-19 00:00:00 LAYER 3 ENHANCED RISK SUMMARY:
+2017-01-19 00:00:00   Input gross exposure: 158.7%
+2017-01-19 00:00:00   Final gross exposure: 525.4%
+2017-01-19 00:00:00   Risk scaling applied: 3.31x
+2017-01-19 00:00:00   Estimated portfolio vol: 21.5%
+2017-01-19 00:00:00   Target portfolio vol: 40.0%
+2017-01-19 00:00:00   Data quality: insufficient
+2017-01-19 00:00:00   Current drawdown: 6.1%
+2017-01-19 00:00:00 === WEEKLY REBALANCE COMPLETE ===
+2017-01-19 00:00:00 ============================================================
+2017-01-19 00:00:00 EXECUTION MANAGER: Starting config-compliant rebalance execution
+2017-01-19 00:00:00 ============================================================
+2017-01-19 00:00:00 EXECUTION INPUT:
+2017-01-19 00:00:00   Rebalance Type: weekly
+2017-01-19 00:00:00   Final Targets: 3 positions
+2017-01-19 00:00:00     /CL: 34.1%
+2017-01-19 00:00:00     /ES: 300.0%
+2017-01-19 00:00:00     /GC: -191.3%
+2017-01-19 00:00:00 EXECUTION: Processing 3 target positions...
+2017-01-19 00:00:00 EXECUTION VALIDATION: Using CONFIG-COMPLIANT validation
+2017-01-19 00:00:00 CONFIG VALIDATION PASSED:
+2017-01-19 00:00:00   Positions: 3 (max: 20)
+2017-01-19 00:00:00   Gross exposure: 525.4%
+2017-01-19 00:00:00   Max position: 300.0% (limit: 300.0%)
+2017-01-19 00:00:00   Capital: $9,393,802.32 (min: $5,000,000)
+2017-01-19 00:00:00 EXECUTION: Portfolio value for calculations: $9,393,802
+2017-01-19 00:00:00 EXECUTION: /CL -> CL WI9SKCH3R0LD for execution
+2017-01-19 00:00:00 EXECUTION: /ES -> ES WIXFAL95L5OH for execution
+2017-01-19 00:00:00 EXECUTION: /GC -> GC WICQWMKLZB8D for execution
+2017-01-19 00:00:00   Executing 3/3 symbols with valid data
+2017-01-19 00:00:00 EXECUTING: /CL target 34.1%
+2017-01-19 00:00:00   EXECUTING /CL (/CL):
+2017-01-19 00:00:00     Price: $52.19
+2017-01-19 00:00:00     Current: 33.9% ($3,183,285)
+2017-01-19 00:00:00     Target:  34.1%
+2017-01-19 00:00:00     Weight diff: 0.262% (config min: 1.000%)
+2017-01-19 00:00:00     SKIPPED: Weight change 0.262% below config threshold 1.000%
+2017-01-19 00:00:00 EXECUTING: /ES target 300.0%
+2017-01-19 00:00:00   EXECUTING /ES (/ES):
+2017-01-19 00:00:00     Price: $2265.88
+2017-01-19 00:00:00     Current: 301.5% ($28,323,438)
+2017-01-19 00:00:00     Target:  300.0%
+2017-01-19 00:00:00     Weight diff: 1.512% (config min: 1.000%)
+2017-01-19 00:00:00     Target value: $28,181,407
+2017-01-19 00:00:00     Trade value:  $-142,031
+2017-01-19 00:00:00     Multiplier: 50.0
+2017-01-19 00:00:00     Quantity: -1 contracts
+2017-01-19 00:00:00     PLACING ORDER: -1 contracts of ES WIXFAL95L5OH
+2017-01-19 00:00:00 ORDER FILLED: ES WIXFAL95L5OH -1 @ $2265.75 ($-2,266)
+2017-01-19 00:00:00     ✓ ORDER PLACED: /ES -1 contracts ($-142,031)
+2017-01-19 00:00:00 EXECUTING: /GC target -191.3%
+2017-01-19 00:00:00   EXECUTING /GC (/GC):
+2017-01-19 00:00:00     Price: $1187.75
+2017-01-19 00:00:00     Current: -192.2% ($-18,053,800)
+2017-01-19 00:00:00     Target:  -191.3%
+2017-01-19 00:00:00     Weight diff: 0.921% (config min: 1.000%)
+2017-01-19 00:00:00     SKIPPED: Weight change 0.921% below config threshold 1.000%
+2017-01-19 00:00:00   KEEPING: CL WI9SKCH3R0LD (mapped from /CL)
+2017-01-19 00:00:00   KEEPING: ES WIXFAL95L5OH (mapped from /ES)
+2017-01-19 00:00:00   KEEPING: GC WICQWMKLZB8D (mapped from /GC)
+2017-01-19 00:00:00 CONFIG-COMPLIANT EXECUTION DIAGNOSTICS:
+2017-01-19 00:00:00   Orders Placed: 1
+2017-01-19 00:00:00   Liquidations: 0
+2017-01-19 00:00:00   Execution Errors: 0
+2017-01-19 00:00:00   Total Trade Value: $142,031
+2017-01-19 00:00:00 CONFIG PARAMETERS USED:
+2017-01-19 00:00:00   Min trade value: $1,000
+2017-01-19 00:00:00   Min weight change: 1.0%
+2017-01-19 00:00:00   SUCCESSFUL TRADES:
+2017-01-19 00:00:00     /ES: -1 contracts ($-142,031)
+2017-01-19 00:00:00   BLOCKED TRADES:
+2017-01-19 00:00:00     /CL: 34.1% - Weight change 0.262% below config threshold 1.000%
+2017-01-19 00:00:00     /GC: -191.3% - Weight change 0.921% below config threshold 1.000%
+2017-01-19 00:00:00 WEEKLY EXECUTION: 1 orders, 0 liquidations
+2017-01-19 00:00:00   Total trade value: $142,031
+2017-01-19 00:00:00   Portfolio value: $9,393,802
+2017-01-19 00:00:00 TOP POSITIONS: /ES: +300.0%, /GC: -191.3%, /CL: +34.1%
+2017-01-19 00:00:00 ============================================================
+2017-01-19 00:00:00 EXECUTION MANAGER: Config-compliant rebalance execution complete
+2017-01-19 00:00:00 ============================================================
+2017-01-19 00:00:00 Weekly rebalance complete: 3 targets executed
+2017-01-20 17:00:00 Portfolio healthy: 3 positions, all valid
+2017-01-23 00:00:00 Contract validation healthy: 3 valid, all contracts operational
+2017-01-26 00:00:00 ==================================================
+2017-01-26 00:00:00 EXECUTING WEEKLY REBALANCE
+2017-01-26 00:00:00 ==================================================
+2017-01-26 00:00:00 === THREE-LAYER WEEKLY REBALANCE ===
+2017-01-26 00:00:00 LAYER 1: MTUM_CTA - AVAILABLE
+2017-01-26 00:00:00 LAYER 1: All 1/1 strategies available
+2017-01-26 00:00:00 LAYER 1: MTUM_CTA generated 3 targets: ['/CL', '/ES', '/GC']
+2017-01-26 00:00:00 LAYER 1: Generated 3 total signals from 1/1 strategies
+2017-01-26 00:00:00 LAYER 2: Executing weekly allocation...
+2017-01-26 00:00:00 LAYER 2: Insufficient track record, maintaining allocations
+2017-01-26 00:00:00 LAYER 2: Current allocations: MTUM_CTA: 100.0%
+2017-01-26 00:00:00 LAYER 2: Used 1 strategies with signals: MTUM_CTA
+2017-01-26 00:00:00 LAYER 2: Total allocation used: 100.0%
+2017-01-26 00:00:00   Allocations unchanged
+2017-01-26 00:00:00   Current allocations: MTUM_CTA: 100.0%
+2017-01-26 00:00:00   Combined (weekly): 3 positions, Gross: 158.7%, Net: 0.56
+2017-01-26 00:00:00 CHARTS: Strategy allocations updated - MTUM_CTA: 100.0%
+2017-01-26 00:00:00 LAYER 2: Combined to 3 positions
+2017-01-26 00:00:00 LAYER 2: Gross: 158.7%, Net: 55.8%
+2017-01-26 00:00:00 LAYER 3: Applying risk management to 3 positions
+2017-01-26 00:00:00 LAYER 3: Basic volatility (insufficient): 21.5%
+2017-01-26 00:00:00 LAYER 3: Vol targeting (insufficient): 21.5% -> 80.0% (scaling: 3.72x)
+2017-01-26 00:00:00 LAYER 3: Position limit applied to /ES: 364.3% -> 300.0%
+2017-01-26 00:00:00 LAYER 3 ENHANCED RISK SUMMARY:
+2017-01-26 00:00:00   Input gross exposure: 158.7%
+2017-01-26 00:00:00   Final gross exposure: 525.4%
+2017-01-26 00:00:00   Risk scaling applied: 3.31x
+2017-01-26 00:00:00   Estimated portfolio vol: 21.5%
+2017-01-26 00:00:00   Target portfolio vol: 40.0%
+2017-01-26 00:00:00   Data quality: insufficient
+2017-01-26 00:00:00   Current drawdown: 5.6%
+2017-01-26 00:00:00 === WEEKLY REBALANCE COMPLETE ===
+2017-01-26 00:00:00 ============================================================
+2017-01-26 00:00:00 EXECUTION MANAGER: Starting config-compliant rebalance execution
+2017-01-26 00:00:00 ============================================================
+2017-01-26 00:00:00 EXECUTION INPUT:
+2017-01-26 00:00:00   Rebalance Type: weekly
+2017-01-26 00:00:00   Final Targets: 3 positions
+2017-01-26 00:00:00     /CL: 34.1%
+2017-01-26 00:00:00     /ES: 300.0%
+2017-01-26 00:00:00     /GC: -191.3%
+2017-01-26 00:00:00 EXECUTION: Processing 3 target positions...
+2017-01-26 00:00:00 EXECUTION VALIDATION: Using CONFIG-COMPLIANT validation
+2017-01-26 00:00:00 CONFIG VALIDATION PASSED:
+2017-01-26 00:00:00   Positions: 3 (max: 20)
+2017-01-26 00:00:00   Gross exposure: 525.4%
+2017-01-26 00:00:00   Max position: 300.0% (limit: 300.0%)
+2017-01-26 00:00:00   Capital: $9,439,552.32 (min: $5,000,000)
+2017-01-26 00:00:00 EXECUTION: Portfolio value for calculations: $9,439,552
+2017-01-26 00:00:00 EXECUTION: /CL -> CL WI9SKCH3R0LD for execution
+2017-01-26 00:00:00 EXECUTION: /ES -> ES WIXFAL95L5OH for execution
+2017-01-26 00:00:00 EXECUTION: /GC -> GC WICQWMKLZB8D for execution
+2017-01-26 00:00:00   Executing 3/3 symbols with valid data
+2017-01-26 00:00:00 EXECUTING: /CL target 34.1%
+2017-01-26 00:00:00   EXECUTING /CL (/CL):
+2017-01-26 00:00:00     Price: $52.94
+2017-01-26 00:00:00     Current: 34.2% ($3,229,340)
+2017-01-26 00:00:00     Target:  34.1%
+2017-01-26 00:00:00     Weight diff: 0.062% (config min: 1.000%)
+2017-01-26 00:00:00     SKIPPED: Weight change 0.062% below config threshold 1.000%
+2017-01-26 00:00:00 EXECUTING: /ES target 300.0%
+2017-01-26 00:00:00   EXECUTING /ES (/ES):
+2017-01-26 00:00:00     Price: $2265.88
+2017-01-26 00:00:00     Current: 298.9% ($28,210,144)
+2017-01-26 00:00:00     Target:  300.0%
+2017-01-26 00:00:00     Weight diff: 1.150% (config min: 1.000%)
+2017-01-26 00:00:00     Target value: $28,318,657
+2017-01-26 00:00:00     Trade value:  $+108,513
+2017-01-26 00:00:00     Multiplier: 50.0
+2017-01-26 00:00:00     BLOCKED: Calculated quantity is exactly zero
+2017-01-26 00:00:00 EXECUTING: /GC target -191.3%
+2017-01-26 00:00:00   EXECUTING /GC (/GC):
+2017-01-26 00:00:00     Price: $1187.75
+2017-01-26 00:00:00     Current: -191.3% ($-18,053,800)
+2017-01-26 00:00:00     Target:  -191.3%
+2017-01-26 00:00:00     Weight diff: 0.011% (config min: 1.000%)
+2017-01-26 00:00:00     SKIPPED: Weight change 0.011% below config threshold 1.000%
+2017-01-26 00:00:00   KEEPING: CL WI9SKCH3R0LD (mapped from /CL)
+2017-01-26 00:00:00   KEEPING: ES WIXFAL95L5OH (mapped from /ES)
+2017-01-26 00:00:00   KEEPING: GC WICQWMKLZB8D (mapped from /GC)
+2017-01-26 00:00:00 CONFIG-COMPLIANT EXECUTION DIAGNOSTICS:
+2017-01-26 00:00:00   Orders Placed: 0
+2017-01-26 00:00:00   Liquidations: 0
+2017-01-26 00:00:00   Execution Errors: 0
+2017-01-26 00:00:00   Total Trade Value: $0
+2017-01-26 00:00:00 CONFIG PARAMETERS USED:
+2017-01-26 00:00:00   Min trade value: $1,000
+2017-01-26 00:00:00   Min weight change: 1.0%
+2017-01-26 00:00:00   BLOCKED TRADES:
+2017-01-26 00:00:00     /CL: 34.1% - Weight change 0.062% below config threshold 1.000%
+2017-01-26 00:00:00     /ES: 300.0% - Calculated quantity is exactly zero
+2017-01-26 00:00:00     /GC: -191.3% - Weight change 0.011% below config threshold 1.000%
+2017-01-26 00:00:00 EXECUTION SUMMARY: No trades executed
+2017-01-26 00:00:00   REASONS FOR NO TRADES:
+2017-01-26 00:00:00     1 position(s): Weight change 0.062% below config threshold 1.000%
+2017-01-26 00:00:00     1 position(s): Calculated quantity is exactly zero
+2017-01-26 00:00:00     1 position(s): Weight change 0.011% below config threshold 1.000%
+2017-01-26 00:00:00 TOP POSITIONS: /ES: +300.0%, /GC: -191.3%, /CL: +34.1%
+2017-01-26 00:00:00 ============================================================
+2017-01-26 00:00:00 EXECUTION MANAGER: Config-compliant rebalance execution complete
+2017-01-26 00:00:00 ============================================================
+2017-01-26 00:00:00 Weekly rebalance complete: 3 targets executed
+2017-01-27 17:00:00 Portfolio healthy: 3 positions, all valid
+2017-01-30 00:00:00 Contract validation healthy: 3 valid, all contracts operational
+2017-02-01 00:00:00 ================================================================================
+2017-02-01 00:00:00 MONTHLY PERFORMANCE REPORT
+2017-02-01 00:00:00 ================================================================================
+2017-02-01 00:00:00 Monthly Return: -0.04%
+2017-02-01 00:00:00 YTD Return: -5.68%
+2017-02-01 00:00:00 Sharpe Ratio: -10.20
+2017-02-01 00:00:00 Max Drawdown: 5.68%
+2017-02-01 00:00:00 CRITICAL: QC MISMATCH DETECTED
+2017-02-01 00:00:00   Portfolio Value: $9,431,622
+2017-02-01 00:00:00   Our Calculated Return: -5.68%
+2017-02-01 00:00:00   QC Statistics Return: 0.00%
+2017-02-01 00:00:00   Mismatch: 5.68%
+2017-02-01 00:00:00   Active Positions during mismatch:
+2017-02-01 00:00:00     CL: 61.0 @ $52.81 = $3,221,410
+2017-02-01 00:00:00     ES: 249.0 @ $2265.88 = $28,210,144
+2017-02-01 00:00:00     GC: -152.0 @ $1187.75 = $-18,053,800
+2017-02-01 00:00:00 ================================================================================
+2017-02-01 00:00:00 MONTHLY PERFORMANCE REPORT
+2017-02-01 00:00:00 ================================================================================
+2017-02-01 00:00:00 Portfolio Value: $9,431,622
+2017-02-01 00:00:00 Active Positions: 3
+2017-02-01 00:00:00 Valid Symbols: 3/3
+2017-02-01 00:00:00   CL: 34.2% ($3,221,410)
+2017-02-01 00:00:00   ES: 299.1% ($28,210,144)
+2017-02-01 00:00:00   GC: -191.4% ($-18,053,800)
+2017-02-02 00:00:00 MTUM_CTA: /CL 6M - Raw: 0.233, Ann: 0.519, Vol: 0.387, Risk-Adj: 1.342
+2017-02-02 00:00:00 MTUM_CTA: /CL 12M - Raw: 0.323, Ann: 0.323, Vol: 0.387, Risk-Adj: 0.834
+2017-02-02 00:00:00 MTUM_CTA: /ES 6M - Raw: 0.050, Ann: 0.103, Vol: 0.128, Risk-Adj: 0.808
+2017-02-02 00:00:00 MTUM_CTA: /ES 12M - Raw: 0.252, Ann: 0.252, Vol: 0.128, Risk-Adj: 1.974
+2017-02-02 00:00:00 MTUM_CTA: /GC 6M - Raw: -0.120, Ann: -0.225, Vol: 0.143, Risk-Adj: -1.575
+2017-02-02 00:00:00 MTUM_CTA: /GC 12M - Raw: 0.060, Ann: 0.060, Vol: 0.143, Risk-Adj: 0.420
+2017-02-02 00:00:00 MTUM_CTA-MAD: /CL | raw=1.088, scalar=9.815, scaled=10.677, capped=10.677, forecast=0.356
+2017-02-02 00:00:00 MTUM_CTA-MAD: /ES | raw=1.391, scalar=9.815, scaled=13.654, capped=13.654, forecast=0.455
+2017-02-02 00:00:00 MTUM_CTA-MAD: /GC | raw=-0.578, scalar=9.815, scaled=-5.668, capped=-5.668, forecast=-0.189
+2017-02-02 00:00:00 LAYER 3: Dynamic target vol (warm-up) 80.0% using fallback multiplier 2.0
+2017-02-02 00:00:00 ==================================================
+2017-02-02 00:00:00 EXECUTING WEEKLY REBALANCE
+2017-02-02 00:00:00 ==================================================
+2017-02-02 00:00:00 === THREE-LAYER WEEKLY REBALANCE ===
+2017-02-02 00:00:00 LAYER 1: MTUM_CTA - AVAILABLE
+2017-02-02 00:00:00 LAYER 1: All 1/1 strategies available
+2017-02-02 00:00:00 MTUM_CTA: Monthly volatility debug - Target volatility: 20.0%
+2017-02-02 00:00:00 MTUM_CTA: MAD weighting - Net: 62.2%, Gross: 100.0%
+2017-02-02 00:00:00 MTUM_CTA: Generated 3 signals across 3 assets
+2017-02-02 00:00:00 MTUM_CTA: Var-cov portfolio vol: 12.6% (gross exposure: 100.0%)
+2017-02-02 00:00:00 MTUM_CTA: Volatility targeting - Current 12.6% (method: varcov), Target 20.0%, Scale 1.59
+2017-02-02 00:00:00 MTUM_CTA: Final targets: {'/CL': 0.5649397846531812, '/ES': 0.7224415863499513, '/GC': -0.29992021629845533}
+2017-02-02 00:00:00 LAYER 1: MTUM_CTA generated 3 targets: ['/CL', '/ES', '/GC']
+2017-02-02 00:00:00 LAYER 1: Generated 3 total signals from 1/1 strategies
+2017-02-02 00:00:00 LAYER 2: Executing weekly allocation...
+2017-02-02 00:00:00 LAYER 2: Insufficient track record, maintaining allocations
+2017-02-02 00:00:00 LAYER 2: Current allocations: MTUM_CTA: 100.0%
+2017-02-02 00:00:00 LAYER 2: Used 1 strategies with signals: MTUM_CTA
+2017-02-02 00:00:00 LAYER 2: Total allocation used: 100.0%
+2017-02-02 00:00:00   Allocations unchanged
+2017-02-02 00:00:00   Current allocations: MTUM_CTA: 100.0%
+2017-02-02 00:00:00   Combined (weekly): 3 positions, Gross: 158.7%, Net: 0.99
+2017-02-02 00:00:00 CHARTS: Strategy allocations updated - MTUM_CTA: 100.0%
+2017-02-02 00:00:00 LAYER 2: Combined to 3 positions
+2017-02-02 00:00:00 LAYER 2: Gross: 158.7%, Net: 98.7%
+2017-02-02 00:00:00 LAYER 3: Applying risk management to 3 positions
+2017-02-02 00:00:00 LAYER 3: Basic volatility (insufficient): 21.7%
+2017-02-02 00:00:00 LAYER 3: Vol targeting (insufficient): 21.7% -> 80.0% (scaling: 3.69x)
+2017-02-02 00:00:00 LAYER 3 ENHANCED RISK SUMMARY:
+2017-02-02 00:00:00   Input gross exposure: 158.7%
+2017-02-02 00:00:00   Final gross exposure: 585.1%
+2017-02-02 00:00:00   Risk scaling applied: 3.69x
+2017-02-02 00:00:00   Estimated portfolio vol: 21.7%
+2017-02-02 00:00:00   Target portfolio vol: 40.0%
+2017-02-02 00:00:00   Data quality: insufficient
+2017-02-02 00:00:00   Current drawdown: 5.2%
+2017-02-02 00:00:00 === WEEKLY REBALANCE COMPLETE ===
+2017-02-02 00:00:00 ============================================================
+2017-02-02 00:00:00 EXECUTION MANAGER: Starting config-compliant rebalance execution
+2017-02-02 00:00:00 ============================================================
+2017-02-02 00:00:00 EXECUTION INPUT:
+2017-02-02 00:00:00   Rebalance Type: weekly
+2017-02-02 00:00:00   Final Targets: 3 positions
+2017-02-02 00:00:00     /CL: 208.3%
+2017-02-02 00:00:00     /ES: 266.3%
+2017-02-02 00:00:00     /GC: -110.6%
+2017-02-02 00:00:00 EXECUTION: Processing 3 target positions...
+2017-02-02 00:00:00 EXECUTION VALIDATION: Using CONFIG-COMPLIANT validation
+2017-02-02 00:00:00 CONFIG VALIDATION PASSED:
+2017-02-02 00:00:00   Positions: 3 (max: 20)
+2017-02-02 00:00:00   Gross exposure: 585.1%
+2017-02-02 00:00:00   Max position: 266.3% (limit: 300.0%)
+2017-02-02 00:00:00   Capital: $9,477,372.32 (min: $5,000,000)
+2017-02-02 00:00:00 EXECUTION: Portfolio value for calculations: $9,477,372
+2017-02-02 00:00:00 EXECUTION: /CL -> CL WI9SKCH3R0LD for execution
+2017-02-02 00:00:00 EXECUTION: /ES -> ES WIXFAL95L5OH for execution
+2017-02-02 00:00:00 EXECUTION: /GC -> GC WICQWMKLZB8D for execution
+2017-02-02 00:00:00   Executing 3/3 symbols with valid data
+2017-02-02 00:00:00 EXECUTING: /CL target 208.3%
+2017-02-02 00:00:00   EXECUTING /CL (/CL):
+2017-02-02 00:00:00     Price: $53.55
+2017-02-02 00:00:00     Current: 34.5% ($3,266,855)
+2017-02-02 00:00:00     Target:  208.3%
+2017-02-02 00:00:00     Weight diff: 173.782% (config min: 1.000%)
+2017-02-02 00:00:00     Target value: $19,736,797
+2017-02-02 00:00:00     Trade value:  $+16,469,942
+2017-02-02 00:00:00     Multiplier: 1000.0
+2017-02-02 00:00:00     Quantity: +307 contracts
+2017-02-02 00:00:00     PLACING ORDER: +307 contracts of CL WI9SKCH3R0LD
+2017-02-02 00:00:00 ORDER FILLED: CL WI9SKCH3R0LD +307 @ $53.56 ($+16,443)
+2017-02-02 00:00:00     ✓ ORDER PLACED: /CL +307 contracts ($+16,469,942)
+2017-02-02 00:00:00 EXECUTING: /ES target 266.3%
+2017-02-02 00:00:00   EXECUTING /ES (/ES):
+2017-02-02 00:00:00     Price: $2265.88
+2017-02-02 00:00:00     Current: 297.7% ($28,210,144)
+2017-02-02 00:00:00     Target:  266.3%
+2017-02-02 00:00:00     Weight diff: 31.347% (config min: 1.000%)
+2017-02-02 00:00:00     Target value: $25,239,297
+2017-02-02 00:00:00     Trade value:  $-2,970,847
+2017-02-02 00:00:00     Multiplier: 50.0
+2017-02-02 00:00:00     Quantity: -26 contracts
+2017-02-02 00:00:00     PLACING ORDER: -26 contracts of ES WIXFAL95L5OH
+2017-02-02 00:00:00 ORDER FILLED: ES WIXFAL95L5OH -26 @ $2265.75 ($-58,910)
+2017-02-02 00:00:00     ✓ ORDER PLACED: /ES -26 contracts ($-2,970,847)
+2017-02-02 00:00:00 EXECUTING: /GC target -110.6%
+2017-02-02 00:00:00   EXECUTING /GC (/GC):
+2017-02-02 00:00:00     Price: $1187.75
+2017-02-02 00:00:00     Current: -190.5% ($-18,053,800)
+2017-02-02 00:00:00     Target:  -110.6%
+2017-02-02 00:00:00     Weight diff: 79.935% (config min: 1.000%)
+2017-02-02 00:00:00     Target value: $-10,478,045
+2017-02-02 00:00:00     Trade value:  $+7,575,755
+2017-02-02 00:00:00     Multiplier: 100.0
+2017-02-02 00:00:00     Quantity: +63 contracts
+2017-02-02 00:00:00     PLACING ORDER: +63 contracts of GC WICQWMKLZB8D
+2017-02-02 00:00:00 ORDER FILLED: GC WICQWMKLZB8D +63 @ $1187.90 ($+74,838)
+2017-02-02 00:00:00     ✓ ORDER PLACED: /GC +63 contracts ($+7,575,755)
+2017-02-02 00:00:00   KEEPING: CL WI9SKCH3R0LD (mapped from /CL)
+2017-02-02 00:00:00   KEEPING: ES WIXFAL95L5OH (mapped from /ES)
+2017-02-02 00:00:00   KEEPING: GC WICQWMKLZB8D (mapped from /GC)
+2017-02-02 00:00:00 CONFIG-COMPLIANT EXECUTION DIAGNOSTICS:
+2017-02-02 00:00:00   Orders Placed: 3
+2017-02-02 00:00:00   Liquidations: 0
+2017-02-02 00:00:00   Execution Errors: 0
+2017-02-02 00:00:00   Total Trade Value: $27,016,544
+2017-02-02 00:00:00 CONFIG PARAMETERS USED:
+2017-02-02 00:00:00   Min trade value: $1,000
+2017-02-02 00:00:00   Min weight change: 1.0%
+2017-02-02 00:00:00   SUCCESSFUL TRADES:
+2017-02-02 00:00:00     /CL: +307 contracts ($+16,469,942)
+2017-02-02 00:00:00     /ES: -26 contracts ($-2,970,847)
+2017-02-02 00:00:00     /GC: +63 contracts ($+7,575,755)
+2017-02-02 00:00:00 WEEKLY EXECUTION: 3 orders, 0 liquidations
+2017-02-02 00:00:00   Total trade value: $27,016,544
+2017-02-02 00:00:00   Portfolio value: $9,472,786
+2017-02-02 00:00:00 TOP POSITIONS: /ES: +266.3%, /CL: +208.3%, /GC: -110.6%
+2017-02-02 00:00:00 ============================================================
+2017-02-02 00:00:00 EXECUTION MANAGER: Config-compliant rebalance execution complete
+2017-02-02 00:00:00 ============================================================
+2017-02-02 00:00:00 Weekly rebalance complete: 3 targets executed
+2017-02-03 00:00:00 ROLLOVER: Successfully added new contract GC WJ98NPN6I7J1
+2017-02-03 00:00:00 ROLLOVER DETECTED: GC WICQWMKLZB8D -> GC WJ98NPN6I7J1 (scheduled for market close)
+2017-02-03 00:00:00 ROLLOVER: GC -> GC (#184)
+2017-02-03 02:06:00 QC Added: Underlying contract GC WJ98NPN6I7J1
+2017-02-03 02:06:00 MTUM_CTA: Ignoring underlying contract GC WJ98NPN6I7J1
+2017-02-03 16:30:00 EXECUTING ROLLOVER: GC WICQWMKLZB8D -> GC WJ98NPN6I7J1
+2017-02-03 16:30:00 ORDER FILLED: GC WICQWMKLZB8D +89 @ $1187.90 ($+105,723)
+2017-02-03 16:30:00 ORDER FILLED: GC WJ98NPN6I7J1 -89 @ $1220.10 ($-108,589)
+2017-02-03 16:30:00   Closed old position: GC WICQWMKLZB8D
+2017-02-03 16:30:00   New contract price: $1220.20
+2017-02-03 16:30:00   ROLLOVER SUCCESS: GC WICQWMKLZB8D -> GC WJ98NPN6I7J1 (-89.0 contracts)
+2017-02-03 16:30:00     Close Orders: 1 tickets
+2017-02-03 16:30:00     Open Order ID: 14, Status: 3
+2017-02-03 16:30:00 ============================================================
+2017-02-03 17:00:00 Portfolio healthy: 3 positions, all valid
+2017-02-06 00:00:00 Contract validation healthy: 3 valid, all contracts operational
+2017-02-06 00:00:00 ROLLOVER: Successfully added new contract GC WK0T6BVWNC0T
+2017-02-06 00:00:00 ROLLOVER DETECTED: GC WJ98NPN6I7J1 -> GC WK0T6BVWNC0T (scheduled for market close)
+2017-02-06 00:00:00 ROLLOVER: GC -> GC (#186)
+2017-02-06 00:00:00 QC Added: Underlying contract GC WK0T6BVWNC0T
+2017-02-06 00:00:00 MTUM_CTA: Ignoring underlying contract GC WK0T6BVWNC0T
+2017-02-06 16:30:00 EXECUTING ROLLOVER: GC WJ98NPN6I7J1 -> GC WK0T6BVWNC0T
+2017-02-06 16:30:00 ORDER FILLED: GC WJ98NPN6I7J1 +89 @ $1235.80 ($+109,986)
+2017-02-06 16:30:00 ORDER FILLED: GC WK0T6BVWNC0T -89 @ $1236.30 ($-110,031)
+2017-02-06 16:30:00   Closed old position: GC WJ98NPN6I7J1
+2017-02-06 16:30:00   New contract price: $1236.80
+2017-02-06 16:30:00   ROLLOVER SUCCESS: GC WJ98NPN6I7J1 -> GC WK0T6BVWNC0T (-89.0 contracts)
+2017-02-06 16:30:00     Close Orders: 1 tickets
+2017-02-06 16:30:00     Open Order ID: 16, Status: 3
+2017-02-06 16:30:00 ============================================================
+2017-02-09 00:00:00 ==================================================
+2017-02-09 00:00:00 EXECUTING WEEKLY REBALANCE
+2017-02-09 00:00:00 ==================================================
+2017-02-09 00:00:00 === THREE-LAYER WEEKLY REBALANCE ===
+2017-02-09 00:00:00 LAYER 1: MTUM_CTA - AVAILABLE
+2017-02-09 00:00:00 LAYER 1: All 1/1 strategies available
+2017-02-09 00:00:00 LAYER 1: MTUM_CTA generated 3 targets: ['/CL', '/ES', '/GC']
+2017-02-09 00:00:00 LAYER 1: Generated 3 total signals from 1/1 strategies
+2017-02-09 00:00:00 LAYER 2: Executing weekly allocation...
+2017-02-09 00:00:00 LAYER 2: Insufficient track record, maintaining allocations
+2017-02-09 00:00:00 LAYER 2: Current allocations: MTUM_CTA: 100.0%
+2017-02-09 00:00:00 LAYER 2: Used 1 strategies with signals: MTUM_CTA
+2017-02-09 00:00:00 LAYER 2: Total allocation used: 100.0%
+2017-02-09 00:00:00   Allocations unchanged
+2017-02-09 00:00:00   Current allocations: MTUM_CTA: 100.0%
+2017-02-09 00:00:00   Combined (weekly): 3 positions, Gross: 158.7%, Net: 0.99
+2017-02-09 00:00:00 CHARTS: Strategy allocations updated - MTUM_CTA: 100.0%
+2017-02-09 00:00:00 LAYER 2: Combined to 3 positions
+2017-02-09 00:00:00 LAYER 2: Gross: 158.7%, Net: 98.7%
+2017-02-09 00:00:00 LAYER 3: Applying risk management to 3 positions
+2017-02-09 00:00:00 LAYER 3: Basic volatility (insufficient): 21.7%
+2017-02-09 00:00:00 LAYER 3: Vol targeting (insufficient): 21.7% -> 80.0% (scaling: 3.69x)
+2017-02-09 00:00:00 LAYER 3 ENHANCED RISK SUMMARY:
+2017-02-09 00:00:00   Input gross exposure: 158.7%
+2017-02-09 00:00:00   Final gross exposure: 585.1%
+2017-02-09 00:00:00   Risk scaling applied: 3.69x
+2017-02-09 00:00:00   Estimated portfolio vol: 21.7%
+2017-02-09 00:00:00   Target portfolio vol: 40.0%
+2017-02-09 00:00:00   Data quality: insufficient
+2017-02-09 00:00:00   Current drawdown: 11.6%
+2017-02-09 00:00:00 === WEEKLY REBALANCE COMPLETE ===
+2017-02-09 00:00:00 ============================================================
+2017-02-09 00:00:00 EXECUTION MANAGER: Starting config-compliant rebalance execution
+2017-02-09 00:00:00 ============================================================
+2017-02-09 00:00:00 EXECUTION INPUT:
+2017-02-09 00:00:00   Rebalance Type: weekly
+2017-02-09 00:00:00   Final Targets: 3 positions
+2017-02-09 00:00:00     /CL: 208.3%
+2017-02-09 00:00:00     /ES: 266.3%
+2017-02-09 00:00:00     /GC: -110.6%
+2017-02-09 00:00:00 EXECUTION: Processing 3 target positions...
+2017-02-09 00:00:00 EXECUTION VALIDATION: Using CONFIG-COMPLIANT validation
+2017-02-09 00:00:00 CONFIG VALIDATION PASSED:
+2017-02-09 00:00:00   Positions: 3 (max: 20)
+2017-02-09 00:00:00   Gross exposure: 585.1%
+2017-02-09 00:00:00   Max position: 266.3% (limit: 300.0%)
+2017-02-09 00:00:00   Capital: $8,837,416.42 (min: $5,000,000)
+2017-02-09 00:00:00 EXECUTION: Portfolio value for calculations: $8,837,416
+2017-02-09 00:00:00 EXECUTION: /CL -> CL WI9SKCH3R0LD for execution
+2017-02-09 00:00:00 EXECUTION: /ES -> ES WIXFAL95L5OH for execution
+2017-02-09 00:00:00 EXECUTION: /GC -> GC WK0T6BVWNC0T for execution
+2017-02-09 00:00:00   Executing 3/3 symbols with valid data
+2017-02-09 00:00:00 EXECUTING: /CL target 208.3%
+2017-02-09 00:00:00   EXECUTING /CL (/CL):
+2017-02-09 00:00:00     Price: $52.38
+2017-02-09 00:00:00     Current: 218.1% ($19,275,840)
+2017-02-09 00:00:00     Target:  208.3%
+2017-02-09 00:00:00     Weight diff: 9.864% (config min: 1.000%)
+2017-02-09 00:00:00     Target value: $18,404,077
+2017-02-09 00:00:00     Trade value:  $-871,763
+2017-02-09 00:00:00     Multiplier: 1000.0
+2017-02-09 00:00:00     Quantity: -16 contracts
+2017-02-09 00:00:00     PLACING ORDER: -16 contracts of CL WI9SKCH3R0LD
+2017-02-09 00:00:00 ORDER FILLED: CL WI9SKCH3R0LD -16 @ $52.37 ($-838)
+2017-02-09 00:00:00     ✓ ORDER PLACED: /CL -16 contracts ($-871,763)
+2017-02-09 00:00:00 EXECUTING: /ES target 266.3%
+2017-02-09 00:00:00   EXECUTING /ES (/ES):
+2017-02-09 00:00:00     Price: $2265.88
+2017-02-09 00:00:00     Current: 285.9% ($25,264,506)
+2017-02-09 00:00:00     Target:  266.3%
+2017-02-09 00:00:00     Weight diff: 19.570% (config min: 1.000%)
+2017-02-09 00:00:00     Target value: $23,535,023
+2017-02-09 00:00:00     Trade value:  $-1,729,483
+2017-02-09 00:00:00     Multiplier: 50.0
+2017-02-09 00:00:00     Quantity: -15 contracts
+2017-02-09 00:00:00     PLACING ORDER: -15 contracts of ES WIXFAL95L5OH
+2017-02-09 00:00:00 ORDER FILLED: ES WIXFAL95L5OH -15 @ $2265.75 ($-33,986)
+2017-02-09 00:00:00     ✓ ORDER PLACED: /ES -15 contracts ($-1,729,483)
+2017-02-09 00:00:00 EXECUTING: /GC target -110.6%
+2017-02-09 00:00:00   EXECUTING /GC (/GC):
+2017-02-09 00:00:00     Price: $1243.05
+2017-02-09 00:00:00     Current: -125.2% ($-11,063,145)
+2017-02-09 00:00:00     Target:  -110.6%
+2017-02-09 00:00:00     Weight diff: 14.627% (config min: 1.000%)
+2017-02-09 00:00:00     Target value: $-9,770,519
+2017-02-09 00:00:00     Trade value:  $+1,292,626
+2017-02-09 00:00:00     Multiplier: 100.0
+2017-02-09 00:00:00     Quantity: +10 contracts
+2017-02-09 00:00:00     PLACING ORDER: +10 contracts of GC WK0T6BVWNC0T
+2017-02-09 00:00:00 ORDER FILLED: GC WK0T6BVWNC0T +10 @ $1243.10 ($+12,431)
+2017-02-09 00:00:00     ✓ ORDER PLACED: /GC +10 contracts ($+1,292,626)
+2017-02-09 00:00:00   KEEPING: CL WI9SKCH3R0LD (mapped from /CL)
+2017-02-09 00:00:00   KEEPING: ES WIXFAL95L5OH (mapped from /ES)
+2017-02-09 00:00:00   KEEPING: GC WK0T6BVWNC0T (mapped from /GC)
+2017-02-09 00:00:00 CONFIG-COMPLIANT EXECUTION DIAGNOSTICS:
+2017-02-09 00:00:00   Orders Placed: 3
+2017-02-09 00:00:00   Liquidations: 0
+2017-02-09 00:00:00   Execution Errors: 0
+2017-02-09 00:00:00   Total Trade Value: $3,893,872
+2017-02-09 00:00:00 CONFIG PARAMETERS USED:
+2017-02-09 00:00:00   Min trade value: $1,000
+2017-02-09 00:00:00   Min weight change: 1.0%
+2017-02-09 00:00:00   SUCCESSFUL TRADES:
+2017-02-09 00:00:00     /CL: -16 contracts ($-871,763)
+2017-02-09 00:00:00     /ES: -15 contracts ($-1,729,483)
+2017-02-09 00:00:00     /GC: +10 contracts ($+1,292,626)
+2017-02-09 00:00:00 WEEKLY EXECUTION: 3 orders, 0 liquidations
+2017-02-09 00:00:00   Total trade value: $3,893,872
+2017-02-09 00:00:00   Portfolio value: $8,837,416
+2017-02-09 00:00:00 TOP POSITIONS: /ES: +266.3%, /CL: +208.3%, /GC: -110.6%
+2017-02-09 00:00:00 ============================================================
+2017-02-09 00:00:00 EXECUTION MANAGER: Config-compliant rebalance execution complete
+2017-02-09 00:00:00 ============================================================
+2017-02-09 00:00:00 Weekly rebalance complete: 3 targets executed
+2017-02-10 17:00:00 Portfolio healthy: 3 positions, all valid
+2017-02-13 00:00:00 Contract validation healthy: 3 valid, all contracts operational
+2017-02-13 00:00:00 ROLLOVER: Successfully added new contract CL WJ1D2YPTW535
+2017-02-13 00:00:00 ROLLOVER DETECTED: CL WI9SKCH3R0LD -> CL WJ1D2YPTW535 (scheduled for market close)
+2017-02-13 00:00:00 ROLLOVER: CL -> CL (#188)
+2017-02-13 00:00:00 QC Added: Underlying contract CL WJ1D2YPTW535
+2017-02-13 00:00:00 MTUM_CTA: Ignoring underlying contract CL WJ1D2YPTW535
+2017-02-13 16:30:00 EXECUTING ROLLOVER: CL WI9SKCH3R0LD -> CL WJ1D2YPTW535
+2017-02-13 16:30:00 ORDER FILLED: CL WI9SKCH3R0LD -352 @ $52.90 ($-18,621)
+2017-02-13 16:30:00 ORDER FILLED: CL WJ1D2YPTW535 +352 @ $53.42 ($+18,804)
+2017-02-13 16:30:00   Closed old position: CL WI9SKCH3R0LD
+2017-02-13 16:30:00   New contract price: $53.41
+2017-02-13 16:30:00   ROLLOVER SUCCESS: CL WI9SKCH3R0LD -> CL WJ1D2YPTW535 (352.0 contracts)
+2017-02-13 16:30:00     Close Orders: 1 tickets
+2017-02-13 16:30:00     Open Order ID: 21, Status: 3
+2017-02-13 16:30:00 ============================================================
+2017-02-16 00:00:00 ==================================================
+2017-02-16 00:00:00 EXECUTING WEEKLY REBALANCE
+2017-02-16 00:00:00 ==================================================
+2017-02-16 00:00:00 === THREE-LAYER WEEKLY REBALANCE ===
+2017-02-16 00:00:00 LAYER 1: MTUM_CTA - AVAILABLE
+2017-02-16 00:00:00 LAYER 1: All 1/1 strategies available
+2017-02-16 00:00:00 LAYER 1: MTUM_CTA generated 3 targets: ['/CL', '/ES', '/GC']
+2017-02-16 00:00:00 LAYER 1: Generated 3 total signals from 1/1 strategies
+2017-02-16 00:00:00 LAYER 2: Executing weekly allocation...
+2017-02-16 00:00:00 LAYER 2: Insufficient track record, maintaining allocations
+2017-02-16 00:00:00 LAYER 2: Current allocations: MTUM_CTA: 100.0%
+2017-02-16 00:00:00 LAYER 2: Used 1 strategies with signals: MTUM_CTA
+2017-02-16 00:00:00 LAYER 2: Total allocation used: 100.0%
+2017-02-16 00:00:00   Allocations unchanged
+2017-02-16 00:00:00   Current allocations: MTUM_CTA: 100.0%
+2017-02-16 00:00:00   Combined (weekly): 3 positions, Gross: 158.7%, Net: 0.99
+2017-02-16 00:00:00 CHARTS: Strategy allocations updated - MTUM_CTA: 100.0%
+2017-02-16 00:00:00 LAYER 2: Combined to 3 positions
+2017-02-16 00:00:00 LAYER 2: Gross: 158.7%, Net: 98.7%
+2017-02-16 00:00:00 LAYER 3: Applying risk management to 3 positions
+2017-02-16 00:00:00 LAYER 3: Basic volatility (insufficient): 21.7%
+2017-02-16 00:00:00 LAYER 3: Vol targeting (insufficient): 21.7% -> 80.0% (scaling: 3.69x)
+2017-02-16 00:00:00 LAYER 3 ENHANCED RISK SUMMARY:
+2017-02-16 00:00:00   Input gross exposure: 158.7%
+2017-02-16 00:00:00   Final gross exposure: 585.1%
+2017-02-16 00:00:00   Risk scaling applied: 3.69x
+2017-02-16 00:00:00   Estimated portfolio vol: 21.7%
+2017-02-16 00:00:00   Target portfolio vol: 40.0%
+2017-02-16 00:00:00   Data quality: insufficient
+2017-02-16 00:00:00   Current drawdown: 9.0%
+2017-02-16 00:00:00 === WEEKLY REBALANCE COMPLETE ===
+2017-02-16 00:00:00 ============================================================
+2017-02-16 00:00:00 EXECUTION MANAGER: Starting config-compliant rebalance execution
+2017-02-16 00:00:00 ============================================================
+2017-02-16 00:00:00 EXECUTION INPUT:
+2017-02-16 00:00:00   Rebalance Type: weekly
+2017-02-16 00:00:00   Final Targets: 3 positions
+2017-02-16 00:00:00     /CL: 208.3%
+2017-02-16 00:00:00     /ES: 266.3%
+2017-02-16 00:00:00     /GC: -110.6%
+2017-02-16 00:00:00 EXECUTION: Processing 3 target positions...
+2017-02-16 00:00:00 EXECUTION VALIDATION: Using CONFIG-COMPLIANT validation
+2017-02-16 00:00:00 CONFIG VALIDATION PASSED:
+2017-02-16 00:00:00   Positions: 3 (max: 20)
+2017-02-16 00:00:00   Gross exposure: 585.1%
+2017-02-16 00:00:00   Max position: 266.3% (limit: 300.0%)
+2017-02-16 00:00:00   Capital: $9,098,367.540000001 (min: $5,000,000)
+2017-02-16 00:00:00 EXECUTION: Portfolio value for calculations: $9,098,368
+2017-02-16 00:00:00 EXECUTION: /CL -> CL WJ1D2YPTW535 for execution
+2017-02-16 00:00:00 EXECUTION: /ES -> ES WIXFAL95L5OH for execution
+2017-02-16 00:00:00 EXECUTION: /GC -> GC WK0T6BVWNC0T for execution
+2017-02-16 00:00:00   Executing 3/3 symbols with valid data
+2017-02-16 00:00:00 EXECUTING: /CL target 208.3%
+2017-02-16 00:00:00   EXECUTING /CL (/CL):
+2017-02-16 00:00:00     Price: $53.47
+2017-02-16 00:00:00     Current: 206.9% ($18,821,440)
+2017-02-16 00:00:00     Target:  208.3%
+2017-02-16 00:00:00     Weight diff: 1.386% (config min: 1.000%)
+2017-02-16 00:00:00     Target value: $18,947,513
+2017-02-16 00:00:00     Trade value:  $+126,073
+2017-02-16 00:00:00     Multiplier: 1000.0
+2017-02-16 00:00:00     Quantity: +2 contracts
+2017-02-16 00:00:00     PLACING ORDER: +2 contracts of CL WJ1D2YPTW535
+2017-02-16 00:00:00 ORDER FILLED: CL WJ1D2YPTW535 +2 @ $53.49 ($+107)
+2017-02-16 00:00:00     ✓ ORDER PLACED: /CL +2 contracts ($+126,073)
+2017-02-16 00:00:00 EXECUTING: /ES target 266.3%
+2017-02-16 00:00:00   EXECUTING /ES (/ES):
+2017-02-16 00:00:00     Price: $2265.88
+2017-02-16 00:00:00     Current: 259.0% ($23,565,100)
+2017-02-16 00:00:00     Target:  266.3%
+2017-02-16 00:00:00     Weight diff: 7.308% (config min: 1.000%)
+2017-02-16 00:00:00     Target value: $24,229,965
+2017-02-16 00:00:00     Trade value:  $+664,865
+2017-02-16 00:00:00     Multiplier: 50.0
+2017-02-16 00:00:00     Quantity: +5 contracts
+2017-02-16 00:00:00     PLACING ORDER: +5 contracts of ES WIXFAL95L5OH
+2017-02-16 00:00:00 ORDER FILLED: ES WIXFAL95L5OH +5 @ $2266.00 ($+11,330)
+2017-02-16 00:00:00     ✓ ORDER PLACED: /ES +5 contracts ($+664,865)
+2017-02-16 00:00:00 EXECUTING: /GC target -110.6%
+2017-02-16 00:00:00   EXECUTING /GC (/GC):
+2017-02-16 00:00:00     Price: $1234.75
+2017-02-16 00:00:00     Current: -107.2% ($-9,754,525)
+2017-02-16 00:00:00     Target:  -110.6%
+2017-02-16 00:00:00     Weight diff: 3.347% (config min: 1.000%)
+2017-02-16 00:00:00     Target value: $-10,059,023
+2017-02-16 00:00:00     Trade value:  $-304,498
+2017-02-16 00:00:00     Multiplier: 100.0
+2017-02-16 00:00:00     Quantity: -2 contracts
+2017-02-16 00:00:00     PLACING ORDER: -2 contracts of GC WK0T6BVWNC0T
+2017-02-16 00:00:00 ORDER FILLED: GC WK0T6BVWNC0T -2 @ $1234.70 ($-2,469)
+2017-02-16 00:00:00     ✓ ORDER PLACED: /GC -2 contracts ($-304,498)
+2017-02-16 00:00:00   KEEPING: CL WJ1D2YPTW535 (mapped from /CL)
+2017-02-16 00:00:00   KEEPING: ES WIXFAL95L5OH (mapped from /ES)
+2017-02-16 00:00:00   KEEPING: GC WK0T6BVWNC0T (mapped from /GC)
+2017-02-16 00:00:00 CONFIG-COMPLIANT EXECUTION DIAGNOSTICS:
+2017-02-16 00:00:00   Orders Placed: 3
+2017-02-16 00:00:00   Liquidations: 0
+2017-02-16 00:00:00   Execution Errors: 0
+2017-02-16 00:00:00   Total Trade Value: $1,095,435
+2017-02-16 00:00:00 CONFIG PARAMETERS USED:
+2017-02-16 00:00:00   Min trade value: $1,000
+2017-02-16 00:00:00   Min weight change: 1.0%
+2017-02-16 00:00:00   SUCCESSFUL TRADES:
+2017-02-16 00:00:00     /CL: +2 contracts ($+126,073)
+2017-02-16 00:00:00     /ES: +5 contracts ($+664,865)
+2017-02-16 00:00:00     /GC: -2 contracts ($-304,498)
+2017-02-16 00:00:00 WEEKLY EXECUTION: 3 orders, 0 liquidations
+2017-02-16 00:00:00   Total trade value: $1,095,435
+2017-02-16 00:00:00   Portfolio value: $9,098,164
+2017-02-16 00:00:00 TOP POSITIONS: /ES: +266.3%, /CL: +208.3%, /GC: -110.6%
+2017-02-16 00:00:00 ============================================================
+2017-02-16 00:00:00 EXECUTION MANAGER: Config-compliant rebalance execution complete
+2017-02-16 00:00:00 ============================================================
+2017-02-16 00:00:00 Weekly rebalance complete: 3 targets executed
+2017-02-17 17:00:00 Portfolio healthy: 3 positions, all valid
+2017-02-20 00:00:00 Contract validation healthy: 3 valid, all contracts operational
+2017-02-20 13:00:00 CRITICAL: LARGE DAILY MOVE DETECTED
+2017-02-20 13:00:00   Date: 2017-02-20 13:00:00
+2017-02-20 13:00:00   Portfolio: $9,183,214 -> $10,109,764
+2017-02-20 13:00:00   Daily Return: 10.09%
+2017-02-20 13:00:00   Current Positions:
+2017-02-20 13:00:00     CL (CL WJ1D2YPTW535): 354.0 @ $53.7250 = $19,018,650
+2017-02-20 13:00:00     ES (ES WIXFAL95L5OH): 213.0 @ $2352.8750 = $25,058,119
+2017-02-20 13:00:00     GC (GC WK0T6BVWNC0T): -81.0 @ $1236.0500 = $-10,012,005
+2017-02-22 00:00:00 QC Removed: CL WI9SKCH3R0LD
+2017-02-23 00:00:00 ==================================================
+2017-02-23 00:00:00 EXECUTING WEEKLY REBALANCE
+2017-02-23 00:00:00 ==================================================
+2017-02-23 00:00:00 === THREE-LAYER WEEKLY REBALANCE ===
+2017-02-23 00:00:00 LAYER 1: MTUM_CTA - AVAILABLE
+2017-02-23 00:00:00 LAYER 1: All 1/1 strategies available
+2017-02-23 00:00:00 LAYER 1: MTUM_CTA generated 3 targets: ['/CL', '/ES', '/GC']
+2017-02-23 00:00:00 LAYER 1: Generated 3 total signals from 1/1 strategies
+2017-02-23 00:00:00 LAYER 2: Executing weekly allocation...
+2017-02-23 00:00:00 LAYER 2: Insufficient track record, maintaining allocations
+2017-02-23 00:00:00 LAYER 2: Current allocations: MTUM_CTA: 100.0%
+2017-02-23 00:00:00 LAYER 2: Used 1 strategies with signals: MTUM_CTA
+2017-02-23 00:00:00 LAYER 2: Total allocation used: 100.0%
+2017-02-23 00:00:00   Allocations unchanged
+2017-02-23 00:00:00   Current allocations: MTUM_CTA: 100.0%
+2017-02-23 00:00:00   Combined (weekly): 3 positions, Gross: 158.7%, Net: 0.99
+2017-02-23 00:00:00 CHARTS: Strategy allocations updated - MTUM_CTA: 100.0%
+2017-02-23 00:00:00 LAYER 2: Combined to 3 positions
+2017-02-23 00:00:00 LAYER 2: Gross: 158.7%, Net: 98.7%
+2017-02-23 00:00:00 LAYER 3: Applying risk management to 3 positions
+2017-02-23 00:00:00 LAYER 3: Basic volatility (insufficient): 21.7%
+2017-02-23 00:00:00 LAYER 3: Vol targeting (insufficient): 21.7% -> 80.0% (scaling: 3.69x)
+2017-02-23 00:00:00 LAYER 3 ENHANCED RISK SUMMARY:
+2017-02-23 00:00:00   Input gross exposure: 158.7%
+2017-02-23 00:00:00   Final gross exposure: 585.1%
+2017-02-23 00:00:00   Risk scaling applied: 3.69x
+2017-02-23 00:00:00   Estimated portfolio vol: 21.7%
+2017-02-23 00:00:00   Target portfolio vol: 40.0%
+2017-02-23 00:00:00   Data quality: insufficient
+2017-02-23 00:00:00   Current drawdown: 0.0%
+2017-02-23 00:00:00 === WEEKLY REBALANCE COMPLETE ===
+2017-02-23 00:00:00 ============================================================
+2017-02-23 00:00:00 EXECUTION MANAGER: Starting config-compliant rebalance execution
+2017-02-23 00:00:00 ============================================================
+2017-02-23 00:00:00 EXECUTION INPUT:
+2017-02-23 00:00:00   Rebalance Type: weekly
+2017-02-23 00:00:00   Final Targets: 3 positions
+2017-02-23 00:00:00     /CL: 208.3%
+2017-02-23 00:00:00     /ES: 266.3%
+2017-02-23 00:00:00     /GC: -110.6%
+2017-02-23 00:00:00 EXECUTION: Processing 3 target positions...
+2017-02-23 00:00:00 EXECUTION VALIDATION: Using CONFIG-COMPLIANT validation
+2017-02-23 00:00:00 CONFIG VALIDATION PASSED:
+2017-02-23 00:00:00   Positions: 3 (max: 20)
+2017-02-23 00:00:00   Gross exposure: 585.1%
+2017-02-23 00:00:00   Max position: 266.3% (limit: 300.0%)
+2017-02-23 00:00:00   Capital: $10,145,853.78 (min: $5,000,000)
+2017-02-23 00:00:00 EXECUTION: Portfolio value for calculations: $10,145,854
+2017-02-23 00:00:00 EXECUTION: /CL -> CL WJ1D2YPTW535 for execution
+2017-02-23 00:00:00 EXECUTION: /ES -> ES WIXFAL95L5OH for execution
+2017-02-23 00:00:00 EXECUTION: /GC -> GC WK0T6BVWNC0T for execution
+2017-02-23 00:00:00   Executing 3/3 symbols with valid data
+2017-02-23 00:00:00 EXECUTING: /CL target 208.3%
+2017-02-23 00:00:00   EXECUTING /CL (/CL):
+2017-02-23 00:00:00     Price: $53.91
+2017-02-23 00:00:00     Current: 188.1% ($19,082,370)
+2017-02-23 00:00:00     Target:  208.3%
+2017-02-23 00:00:00     Weight diff: 20.171% (config min: 1.000%)
+2017-02-23 00:00:00     Target value: $21,128,921
+2017-02-23 00:00:00     Trade value:  $+2,046,551
+2017-02-23 00:00:00     Multiplier: 1000.0
+2017-02-23 00:00:00     Quantity: +37 contracts
+2017-02-23 00:00:00     PLACING ORDER: +37 contracts of CL WJ1D2YPTW535
+2017-02-23 00:00:00 ORDER FILLED: CL WJ1D2YPTW535 +37 @ $53.94 ($+1,996)
+2017-02-23 00:00:00     ✓ ORDER PLACED: /CL +37 contracts ($+2,046,551)
+2017-02-23 00:00:00 EXECUTING: /ES target 266.3%
+2017-02-23 00:00:00   EXECUTING /ES (/ES):
+2017-02-23 00:00:00     Price: $2352.88
+2017-02-23 00:00:00     Current: 247.0% ($25,058,119)
+2017-02-23 00:00:00     Target:  266.3%
+2017-02-23 00:00:00     Weight diff: 19.332% (config min: 1.000%)
+2017-02-23 00:00:00     Target value: $27,019,537
+2017-02-23 00:00:00     Trade value:  $+1,961,418
+2017-02-23 00:00:00     Multiplier: 50.0
+2017-02-23 00:00:00     Quantity: +16 contracts
+2017-02-23 00:00:00     PLACING ORDER: +16 contracts of ES WIXFAL95L5OH
+2017-02-23 00:00:00 ORDER FILLED: ES WIXFAL95L5OH +16 @ $2353.00 ($+37,648)
+2017-02-23 00:00:00     ✓ ORDER PLACED: /ES +16 contracts ($+1,961,418)
+2017-02-23 00:00:00 EXECUTING: /GC target -110.6%
+2017-02-23 00:00:00   EXECUTING /GC (/GC):
+2017-02-23 00:00:00     Price: $1238.15
+2017-02-23 00:00:00     Current: -98.8% ($-10,029,015)
+2017-02-23 00:00:00     Target:  -110.6%
+2017-02-23 00:00:00     Weight diff: 11.710% (config min: 1.000%)
+2017-02-23 00:00:00     Target value: $-11,217,108
+2017-02-23 00:00:00     Trade value:  $-1,188,093
+2017-02-23 00:00:00     Multiplier: 100.0
+2017-02-23 00:00:00     Quantity: -9 contracts
+2017-02-23 00:00:00     PLACING ORDER: -9 contracts of GC WK0T6BVWNC0T
+2017-02-23 00:00:00 ORDER FILLED: GC WK0T6BVWNC0T -9 @ $1238.10 ($-11,143)
+2017-02-23 00:00:00     ✓ ORDER PLACED: /GC -9 contracts ($-1,188,093)
+2017-02-23 00:00:00   KEEPING: CL WJ1D2YPTW535 (mapped from /CL)
+2017-02-23 00:00:00   KEEPING: ES WIXFAL95L5OH (mapped from /ES)
+2017-02-23 00:00:00   KEEPING: GC WK0T6BVWNC0T (mapped from /GC)
+2017-02-23 00:00:00 CONFIG-COMPLIANT EXECUTION DIAGNOSTICS:
+2017-02-23 00:00:00   Orders Placed: 3
+2017-02-23 00:00:00   Liquidations: 0
+2017-02-23 00:00:00   Execution Errors: 0
+2017-02-23 00:00:00   Total Trade Value: $5,196,063
+2017-02-23 00:00:00 CONFIG PARAMETERS USED:
+2017-02-23 00:00:00   Min trade value: $1,000
+2017-02-23 00:00:00   Min weight change: 1.0%
+2017-02-23 00:00:00   SUCCESSFUL TRADES:
+2017-02-23 00:00:00     /CL: +37 contracts ($+2,046,551)
+2017-02-23 00:00:00     /ES: +16 contracts ($+1,961,418)
+2017-02-23 00:00:00     /GC: -9 contracts ($-1,188,093)
+2017-02-23 00:00:00 WEEKLY EXECUTION: 3 orders, 0 liquidations
+2017-02-23 00:00:00   Total trade value: $5,196,063
+2017-02-23 00:00:00   Portfolio value: $10,142,678
+2017-02-23 00:00:00 TOP POSITIONS: /ES: +266.3%, /CL: +208.3%, /GC: -110.6%
+2017-02-23 00:00:00 ============================================================
+2017-02-23 00:00:00 EXECUTION MANAGER: Config-compliant rebalance execution complete
+2017-02-23 00:00:00 ============================================================
+2017-02-23 00:00:00 Weekly rebalance complete: 3 targets executed
+2017-02-24 17:00:00 Portfolio healthy: 3 positions, all valid
+2017-02-27 00:00:00 Contract validation healthy: 3 valid, all contracts operational
+2017-03-01 00:00:00 ================================================================================
+2017-03-01 00:00:00 MONTHLY PERFORMANCE REPORT
+2017-03-01 00:00:00 ================================================================================
+2017-03-01 00:00:00 Monthly Return: 0.53%
+2017-03-01 00:00:00 YTD Return: 0.94%
+2017-03-01 00:00:00 Sharpe Ratio: -0.84
+2017-03-01 00:00:00 Max Drawdown: 4.22%
+2017-03-01 00:00:00 ================================================================================
+2017-03-01 00:00:00 MONTHLY PERFORMANCE REPORT
+2017-03-01 00:00:00 ================================================================================
+2017-03-01 00:00:00 Portfolio Value: $10,094,198
+2017-03-01 00:00:00 Active Positions: 3
+2017-03-01 00:00:00 Valid Symbols: 3/3
+2017-03-01 00:00:00   CL: 209.2% ($21,112,045)
+2017-03-01 00:00:00   ES: 266.9% ($26,940,419)
+2017-03-01 00:00:00   GC: -111.3% ($-11,238,750)
+2017-03-02 00:00:00 MTUM_CTA: /CL 6M - Raw: 0.053, Ann: 0.110, Vol: 0.386, Risk-Adj: 0.284
+2017-03-02 00:00:00 MTUM_CTA: /CL 12M - Raw: 0.268, Ann: 0.268, Vol: 0.386, Risk-Adj: 0.695
+2017-03-02 00:00:00 MTUM_CTA: /ES 6M - Raw: 0.104, Ann: 0.219, Vol: 0.126, Risk-Adj: 1.736
+2017-03-02 00:00:00 MTUM_CTA: /ES 12M - Raw: 0.220, Ann: 0.220, Vol: 0.126, Risk-Adj: 1.746
+2017-03-02 00:00:00 MTUM_CTA: /GC 6M - Raw: -0.062, Ann: -0.121, Vol: 0.143, Risk-Adj: -0.842
+2017-03-02 00:00:00 MTUM_CTA: /GC 12M - Raw: 0.002, Ann: 0.002, Vol: 0.143, Risk-Adj: 0.017
+2017-03-02 00:00:00 MTUM_CTA-MAD: /CL | raw=0.490, scalar=11.349, scaled=5.560, capped=5.560, forecast=0.185
+2017-03-02 00:00:00 MTUM_CTA-MAD: /ES | raw=1.741, scalar=11.349, scaled=19.758, capped=19.758, forecast=0.659
+2017-03-02 00:00:00 MTUM_CTA-MAD: /GC | raw=-0.413, scalar=11.349, scaled=-4.682, capped=-4.682, forecast=-0.156
+2017-03-02 00:00:00 LAYER 3: Dynamic target vol (warm-up) 80.0% using fallback multiplier 2.0
+2017-03-02 00:00:00 ==================================================
+2017-03-02 00:00:00 EXECUTING WEEKLY REBALANCE
+2017-03-02 00:00:00 ==================================================
+2017-03-02 00:00:00 === THREE-LAYER WEEKLY REBALANCE ===
+2017-03-02 00:00:00 LAYER 1: MTUM_CTA - AVAILABLE
+2017-03-02 00:00:00 LAYER 1: All 1/1 strategies available
+2017-03-02 00:00:00 MTUM_CTA: Monthly volatility debug - Target volatility: 20.0%
+2017-03-02 00:00:00 MTUM_CTA: MAD weighting - Net: 68.8%, Gross: 100.0%
+2017-03-02 00:00:00 MTUM_CTA: Generated 3 signals across 3 assets
+2017-03-02 00:00:00 MTUM_CTA: Var-cov portfolio vol: 12.6% (gross exposure: 100.0%)
+2017-03-02 00:00:00 MTUM_CTA: Volatility targeting - Current 12.6% (method: varcov), Target 20.0%, Scale 1.59
+2017-03-02 00:00:00 MTUM_CTA: Final targets: {'/CL': 0.2941894884295356, '/ES': 1.0453756887446413, '/GC': -0.24773641012741057}
+2017-03-02 00:00:00 LAYER 1: MTUM_CTA generated 3 targets: ['/CL', '/ES', '/GC']
+2017-03-02 00:00:00 LAYER 1: Generated 3 total signals from 1/1 strategies
+2017-03-02 00:00:00 LAYER 2: Executing weekly allocation...
+2017-03-02 00:00:00 LAYER 2: Insufficient track record, maintaining allocations
+2017-03-02 00:00:00 LAYER 2: Current allocations: MTUM_CTA: 100.0%
+2017-03-02 00:00:00 LAYER 2: Used 1 strategies with signals: MTUM_CTA
+2017-03-02 00:00:00 LAYER 2: Total allocation used: 100.0%
+2017-03-02 00:00:00   Allocations unchanged
+2017-03-02 00:00:00   Current allocations: MTUM_CTA: 100.0%
+2017-03-02 00:00:00   Combined (weekly): 3 positions, Gross: 158.7%, Net: 1.09
+2017-03-02 00:00:00 CHARTS: Strategy allocations updated - MTUM_CTA: 100.0%
+2017-03-02 00:00:00 LAYER 2: Combined to 3 positions
+2017-03-02 00:00:00 LAYER 2: Gross: 158.7%, Net: 109.2%
+2017-03-02 00:00:00 LAYER 3: Applying risk management to 3 positions
+2017-03-02 00:00:00 LAYER 3: Basic volatility (insufficient): 22.9%
+2017-03-02 00:00:00 LAYER 3: Vol targeting (insufficient): 22.9% -> 80.0% (scaling: 3.49x)
+2017-03-02 00:00:00 LAYER 3: Position limit applied to /ES: 364.8% -> 300.0%
+2017-03-02 00:00:00 LAYER 3 ENHANCED RISK SUMMARY:
+2017-03-02 00:00:00   Input gross exposure: 158.7%
+2017-03-02 00:00:00   Final gross exposure: 489.1%
+2017-03-02 00:00:00   Risk scaling applied: 3.08x
+2017-03-02 00:00:00   Estimated portfolio vol: 22.9%
+2017-03-02 00:00:00   Target portfolio vol: 40.0%
+2017-03-02 00:00:00   Data quality: insufficient
+2017-03-02 00:00:00   Current drawdown: 1.9%
+2017-03-02 00:00:00 === WEEKLY REBALANCE COMPLETE ===
+2017-03-02 00:00:00 ============================================================
+2017-03-02 00:00:00 EXECUTION MANAGER: Starting config-compliant rebalance execution
+2017-03-02 00:00:00 ============================================================
+2017-03-02 00:00:00 EXECUTION INPUT:
+2017-03-02 00:00:00   Rebalance Type: weekly
+2017-03-02 00:00:00   Final Targets: 3 positions
+2017-03-02 00:00:00     /CL: 102.7%
+2017-03-02 00:00:00     /ES: 300.0%
+2017-03-02 00:00:00     /GC: -86.4%
+2017-03-02 00:00:00 EXECUTION: Processing 3 target positions...
+2017-03-02 00:00:00 EXECUTION VALIDATION: Using CONFIG-COMPLIANT validation
+2017-03-02 00:00:00 CONFIG VALIDATION PASSED:
+2017-03-02 00:00:00   Positions: 3 (max: 20)
+2017-03-02 00:00:00   Gross exposure: 489.1%
+2017-03-02 00:00:00   Max position: 300.0% (limit: 300.0%)
+2017-03-02 00:00:00   Capital: $9,949,557.74 (min: $5,000,000)
+2017-03-02 00:00:00 EXECUTION: Portfolio value for calculations: $9,949,558
+2017-03-02 00:00:00 EXECUTION: /CL -> CL WJ1D2YPTW535 for execution
+2017-03-02 00:00:00 EXECUTION: /ES -> ES WIXFAL95L5OH for execution
+2017-03-02 00:00:00 EXECUTION: /GC -> GC WK0T6BVWNC0T for execution
+2017-03-02 00:00:00   Executing 3/3 symbols with valid data
+2017-03-02 00:00:00 EXECUTING: /CL target 102.7%
+2017-03-02 00:00:00   EXECUTING /CL (/CL):
+2017-03-02 00:00:00     Price: $53.66
+2017-03-02 00:00:00     Current: 210.9% ($20,981,060)
+2017-03-02 00:00:00     Target:  102.7%
+2017-03-02 00:00:00     Weight diff: 108.219% (config min: 1.000%)
+2017-03-02 00:00:00     Target value: $10,213,729
+2017-03-02 00:00:00     Trade value:  $-10,767,331
+2017-03-02 00:00:00     Multiplier: 1000.0
+2017-03-02 00:00:00     Quantity: -200 contracts
+2017-03-02 00:00:00     PLACING ORDER: -200 contracts of CL WJ1D2YPTW535
+2017-03-02 00:00:00 ORDER FILLED: CL WJ1D2YPTW535 -200 @ $53.65 ($-10,730)
+2017-03-02 00:00:00     ✓ ORDER PLACED: /CL -200 contracts ($-10,767,331)
+2017-03-02 00:00:00 EXECUTING: /ES target 300.0%
+2017-03-02 00:00:00   EXECUTING /ES (/ES):
+2017-03-02 00:00:00     Price: $2352.88
+2017-03-02 00:00:00     Current: 270.8% ($26,940,419)
+2017-03-02 00:00:00     Target:  300.0%
+2017-03-02 00:00:00     Weight diff: 29.230% (config min: 1.000%)
+2017-03-02 00:00:00     Target value: $29,848,673
+2017-03-02 00:00:00     Trade value:  $+2,908,254
+2017-03-02 00:00:00     Multiplier: 50.0
+2017-03-02 00:00:00     Quantity: +24 contracts
+2017-03-02 00:00:00     PLACING ORDER: +24 contracts of ES WIXFAL95L5OH
+2017-03-02 00:00:00 ORDER FILLED: ES WIXFAL95L5OH +24 @ $2353.00 ($+56,472)
+2017-03-02 00:00:00     ✓ ORDER PLACED: /ES +24 contracts ($+2,908,254)
+2017-03-02 00:00:00 EXECUTING: /GC target -86.4%
+2017-03-02 00:00:00   EXECUTING /GC (/GC):
+2017-03-02 00:00:00     Price: $1250.05
+2017-03-02 00:00:00     Current: -113.1% ($-11,250,450)
+2017-03-02 00:00:00     Target:  -86.4%
+2017-03-02 00:00:00     Weight diff: 26.629% (config min: 1.000%)
+2017-03-02 00:00:00     Target value: $-8,600,962
+2017-03-02 00:00:00     Trade value:  $+2,649,488
+2017-03-02 00:00:00     Multiplier: 100.0
+2017-03-02 00:00:00     Quantity: +21 contracts
+2017-03-02 00:00:00     PLACING ORDER: +21 contracts of GC WK0T6BVWNC0T
+2017-03-02 00:00:00 ORDER FILLED: GC WK0T6BVWNC0T +21 @ $1250.10 ($+26,252)
+2017-03-02 00:00:00     ✓ ORDER PLACED: /GC +21 contracts ($+2,649,488)
+2017-03-02 00:00:00   KEEPING: CL WJ1D2YPTW535 (mapped from /CL)
+2017-03-02 00:00:00   KEEPING: ES WIXFAL95L5OH (mapped from /ES)
+2017-03-02 00:00:00   KEEPING: GC WK0T6BVWNC0T (mapped from /GC)
+2017-03-02 00:00:00 CONFIG-COMPLIANT EXECUTION DIAGNOSTICS:
+2017-03-02 00:00:00   Orders Placed: 3
+2017-03-02 00:00:00   Liquidations: 0
+2017-03-02 00:00:00   Execution Errors: 0
+2017-03-02 00:00:00   Total Trade Value: $16,325,073
+2017-03-02 00:00:00 CONFIG PARAMETERS USED:
+2017-03-02 00:00:00   Min trade value: $1,000
+2017-03-02 00:00:00   Min weight change: 1.0%
+2017-03-02 00:00:00   SUCCESSFUL TRADES:
+2017-03-02 00:00:00     /CL: -200 contracts ($-10,767,331)
+2017-03-02 00:00:00     /ES: +24 contracts ($+2,908,254)
+2017-03-02 00:00:00     /GC: +21 contracts ($+2,649,488)
+2017-03-02 00:00:00 WEEKLY EXECUTION: 3 orders, 0 liquidations
+2017-03-02 00:00:00   Total trade value: $16,325,073
+2017-03-02 00:00:00   Portfolio value: $9,949,155
+2017-03-02 00:00:00 TOP POSITIONS: /ES: +300.0%, /CL: +102.7%, /GC: -86.4%
+2017-03-02 00:00:00 ============================================================
+2017-03-02 00:00:00 EXECUTION MANAGER: Config-compliant rebalance execution complete
+2017-03-02 00:00:00 ============================================================
+2017-03-02 00:00:00 Weekly rebalance complete: 3 targets executed
+2017-03-03 17:00:00 Portfolio healthy: 3 positions, all valid
+2017-03-06 00:00:00 Contract validation healthy: 3 valid, all contracts operational
+2017-03-09 00:00:00 ==================================================
+2017-03-09 00:00:00 EXECUTING WEEKLY REBALANCE
+2017-03-09 00:00:00 ==================================================
+2017-03-09 00:00:00 === THREE-LAYER WEEKLY REBALANCE ===
+2017-03-09 00:00:00 LAYER 1: MTUM_CTA - AVAILABLE
+2017-03-09 00:00:00 LAYER 1: All 1/1 strategies available
+2017-03-09 00:00:00 LAYER 1: MTUM_CTA generated 3 targets: ['/CL', '/ES', '/GC']
+2017-03-09 00:00:00 LAYER 1: Generated 3 total signals from 1/1 strategies
+2017-03-09 00:00:00 LAYER 2: Executing weekly allocation...
+2017-03-09 00:00:00 LAYER 2: Insufficient track record, maintaining allocations
+2017-03-09 00:00:00 LAYER 2: Current allocations: MTUM_CTA: 100.0%
+2017-03-09 00:00:00 LAYER 2: Used 1 strategies with signals: MTUM_CTA
+2017-03-09 00:00:00 LAYER 2: Total allocation used: 100.0%
+2017-03-09 00:00:00   Allocations unchanged
+2017-03-09 00:00:00   Current allocations: MTUM_CTA: 100.0%
+2017-03-09 00:00:00   Combined (weekly): 3 positions, Gross: 158.7%, Net: 1.09
+2017-03-09 00:00:00 CHARTS: Strategy allocations updated - MTUM_CTA: 100.0%
+2017-03-09 00:00:00 LAYER 2: Combined to 3 positions
+2017-03-09 00:00:00 LAYER 2: Gross: 158.7%, Net: 109.2%
+2017-03-09 00:00:00 LAYER 3: Applying risk management to 3 positions
+2017-03-09 00:00:00 LAYER 3: Basic volatility (insufficient): 22.9%
+2017-03-09 00:00:00 LAYER 3: Vol targeting (insufficient): 22.9% -> 80.0% (scaling: 3.49x)
+2017-03-09 00:00:00 LAYER 3: Position limit applied to /ES: 364.8% -> 300.0%
+2017-03-09 00:00:00 LAYER 3 ENHANCED RISK SUMMARY:
+2017-03-09 00:00:00   Input gross exposure: 158.7%
+2017-03-09 00:00:00   Final gross exposure: 489.1%
+2017-03-09 00:00:00   Risk scaling applied: 3.08x
+2017-03-09 00:00:00   Estimated portfolio vol: 22.9%
+2017-03-09 00:00:00   Target portfolio vol: 40.0%
+2017-03-09 00:00:00   Data quality: insufficient
+2017-03-09 00:00:00   Current drawdown: 5.6%
+2017-03-09 00:00:00 === WEEKLY REBALANCE COMPLETE ===
+2017-03-09 00:00:00 ============================================================
+2017-03-09 00:00:00 EXECUTION MANAGER: Starting config-compliant rebalance execution
+2017-03-09 00:00:00 ============================================================
+2017-03-09 00:00:00 EXECUTION INPUT:
+2017-03-09 00:00:00   Rebalance Type: weekly
+2017-03-09 00:00:00   Final Targets: 3 positions
+2017-03-09 00:00:00     /CL: 102.7%
+2017-03-09 00:00:00     /ES: 300.0%
+2017-03-09 00:00:00     /GC: -86.4%
+2017-03-09 00:00:00 EXECUTION: Processing 3 target positions...
+2017-03-09 00:00:00 EXECUTION VALIDATION: Using CONFIG-COMPLIANT validation
+2017-03-09 00:00:00 CONFIG VALIDATION PASSED:
+2017-03-09 00:00:00   Positions: 3 (max: 20)
+2017-03-09 00:00:00   Gross exposure: 489.1%
+2017-03-09 00:00:00   Max position: 300.0% (limit: 300.0%)
+2017-03-09 00:00:00   Capital: $9,577,404.540000001 (min: $5,000,000)
+2017-03-09 00:00:00 EXECUTION: Portfolio value for calculations: $9,577,405
+2017-03-09 00:00:00 EXECUTION: /CL -> CL WJ1D2YPTW535 for execution
+You currently have a maximum of 100kb of log data per backtest, and 100kb total max per day. Have you tried step-by-step debugging? See more at https://qnt.co/debugging or upgrade your organization type for more logs at https://www.quantconnect.com/pricing

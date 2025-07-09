@@ -671,15 +671,17 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             # CRITICAL: For daily data resolution, use END-OF-DAY scheduling to avoid stale fills
             # Daily bars are only complete at end of day (~6 PM for futures)
             
-            # Weekly rebalancing at END OF WEEK - use end of day timing
-            # This ensures we have the complete daily bar with actual closing prices
+            # WEEKLY REBALANCE (ROLLING 7-DAY) ----------------------------------
+            # Instead of hard-coding a calendar weekday we trigger every day at 23:30
+            # and execute the rebalance only if ≥ 7 days have elapsed since the last.
+            # This avoids Friday-holiday skips and ensures daily bars are complete.
             self.Schedule.On(
-                self.DateRules.WeekEnd(), 
-                self.TimeRules.At(23, 30),  # 11:30 PM - after daily bar is complete
-                self.WeeklyRebalance
+                self.DateRules.EveryDay(),
+                self.TimeRules.At(23, 30),  # 11:30 PM NY – after daily bars are final
+                self.MaybeWeeklyRebalance
             )
-            
-            # Monthly performance reporting at month end - use end of day timing
+
+            # Monthly performance reporting at month end - use end-of-day timing
             self.Schedule.On(
                 self.DateRules.MonthEnd(),
                 self.TimeRules.At(23, 45),  # 11:45 PM - after daily bar is complete
@@ -694,7 +696,7 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             )
             
             self.Log("Rebalancing schedule configured for DAILY DATA RESOLUTION (END-OF-DAY):")
-            self.Log("  - Weekly: End of week at 11:30 PM (after daily bar completion)")
+            self.Log("  - Weekly: Rolling 7-day check at 11:30 PM (after daily bar)")
             self.Log("  - Monthly: Month end at 11:45 PM (after daily bar completion)")
             self.Log("  - Daily: Contract validation at 11:00 PM (after daily bar completion)")
             self.Log("  - PREVENTS STALE FILLS: Uses actual daily closing prices, not previous day's prices")
@@ -871,7 +873,8 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
                     
                     # Estimate warmup progress (rough calculation)
                     start_time = self.StartDate
-                    elapsed_days = (self.Time - start_time).days
+                    # Ensure we never show negative progress when Time < StartDate (during historical warm-up)
+                    elapsed_days = max(0, (self.Time - start_time).days)
                     progress_pct = min(100, (elapsed_days / warmup_days) * 100)
                     
                     self.Log(f"WARMUP PROGRESS: {progress_pct:.1f}% ({elapsed_days}/{warmup_days} days) - Monthly reports disabled during warmup")
@@ -1182,4 +1185,22 @@ class ThreeLayerCTAPortfolio(QCAlgorithm):
             'positions_count': sum(1 for h in self.Portfolio.Values if h.Invested),
             'timestamp': self.Time,
             'note': 'Using custom performance tracking'
-        } 
+        }
+
+    # ---------------------------------------------------------------------------
+    # Rolling-7-day rebalance helper – executes WeeklyRebalance only when needed
+    # ---------------------------------------------------------------------------
+    def MaybeWeeklyRebalance(self):
+        """Trigger WeeklyRebalance if ≥7 days have passed since the last run."""
+        try:
+            # Initialise tracking attribute if missing (defensive for warm-start runs)
+            if not hasattr(self, '_last_weekly_rebalance'):
+                self._last_weekly_rebalance = None
+
+            if (self._last_weekly_rebalance is None or
+                (self.Time.date() - self._last_weekly_rebalance).days >= 7):
+                self.WeeklyRebalance()
+                # Record date regardless of success; skipped weeks will be retried next day
+                self._last_weekly_rebalance = self.Time.date()
+        except Exception as e:
+            self.Error(f"MaybeWeeklyRebalance error: {str(e)}") 

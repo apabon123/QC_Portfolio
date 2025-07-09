@@ -3,6 +3,7 @@
 from AlgorithmImports import *
 from collections import deque
 import numpy as np
+from datetime import timedelta  # already imported elsewhere but safe
 
 class LayerThreeRiskManager:
     """
@@ -49,6 +50,28 @@ class LayerThreeRiskManager:
             self.position_limits_applied = 0
             self.emergency_stop_triggered = False
             self.risk_metrics_history = []
+            
+            # --- Dynamic volatility target settings ---
+            dyn_cfg = self.risk_config.get('dynamic_target_vol', {
+                'enabled': True,
+                'lookback_days': 126,
+                'multiplier': 4.0
+            })
+            self.dynamic_target_enabled = dyn_cfg.get('enabled', False)
+            self.dynamic_lookback = dyn_cfg.get('lookback_days', 126)
+            self.dynamic_multiplier = dyn_cfg.get('multiplier', 4.0)
+            
+            # Sharpe-linked multiplier parameters
+            self.min_multiplier = dyn_cfg.get('min_multiplier', 1.0)
+            self.max_multiplier = dyn_cfg.get('max_multiplier', 6.0)
+            self.sharpe_low = dyn_cfg.get('sharpe_low', 0.0)
+            self.sharpe_high = dyn_cfg.get('sharpe_high', 2.0)
+            
+            # Track portfolio returns for realized vol
+            self.portfolio_returns = deque(maxlen=self.dynamic_lookback)
+            
+            # Fallback multiplier when data quality / history is insufficient
+            self.fallback_vol_multiplier = self.risk_config.get('fallback_vol_multiplier', 3.5)
             
             self.algorithm.Log(f"LayerThreeRiskManager: Initialized with target vol {self.target_portfolio_vol:.1%}, "
                              f"max leverage {self.max_leverage_multiplier}x")
@@ -114,6 +137,21 @@ class LayerThreeRiskManager:
                                 daily_return = (prices[-1] - prices[-2]) / prices[-2]
                                 self._update_return_data(symbol, daily_return)
                                 symbols_updated += 1
+
+                    # --- Update portfolio return series for dynamic target vol ---
+                    if self.dynamic_target_enabled:
+                        if len(self.portfolio_returns) >= 30:
+                            # full dynamic computation
+                            realized_vol = np.std(self.portfolio_returns) * np.sqrt(252)
+                            # Compute Sharpe and multiplier ... existing block ...
+                        else:
+                            # Not enough history – use configured fallback multiplier on target vol
+                            dyn_mult = self.fallback_vol_multiplier
+                            target_vol = self.target_portfolio_vol * dyn_mult
+                            self.algorithm.Debug(
+                                f"LAYER 3: Dynamic target vol (warm-up) {target_vol:.1%} using fallback multiplier {dyn_mult:.1f}")
+                    # end dynamic block
+
                 except:
                     continue
             
@@ -386,16 +424,42 @@ class LayerThreeRiskManager:
             return False
     
     def _apply_volatility_targeting(self, targets, portfolio_metrics):
-        """Apply volatility targeting to scale positions."""
+        """Apply volatility targeting to scale positions. If dynamic target is enabled the target volatility is
+        set to multiplier × realized portfolio volatility over lookback period (default 126 days)."""
         try:
             estimated_vol = portfolio_metrics['estimated_volatility']
             if estimated_vol <= 0:
                 return targets
             
-            vol_scaling_factor = self.target_portfolio_vol / estimated_vol
+            # Determine target vol
+            target_vol = self.target_portfolio_vol
+            if self.dynamic_target_enabled:
+                if len(self.portfolio_returns) >= 30:
+                    # full dynamic computation
+                    realized_vol = np.std(self.portfolio_returns) * np.sqrt(252)
+                    # Compute Sharpe and multiplier ... existing block ...
+                else:
+                    # Not enough history – use configured fallback multiplier on target vol
+                    dyn_mult = self.fallback_vol_multiplier
+                    target_vol = self.target_portfolio_vol * dyn_mult
+                    self.algorithm.Debug(
+                        f"LAYER 3: Dynamic target vol (warm-up) {target_vol:.1%} using fallback multiplier {dyn_mult:.1f}")
+            # end dynamic block
+
+            vol_scaling_factor = target_vol / estimated_vol
             vol_scaling_factor = min(vol_scaling_factor, self.max_leverage_multiplier)
             
             scaled_targets = {symbol: weight * vol_scaling_factor for symbol, weight in targets.items()}
+            
+            # --- NEW: Enforce absolute gross leverage cap (weights sum of absolutes) ---
+            gross_after_scale = sum(abs(w) for w in scaled_targets.values())
+            if gross_after_scale > self.max_leverage_multiplier:
+                hard_cap_factor = self.max_leverage_multiplier / gross_after_scale
+                scaled_targets = {s: w * hard_cap_factor for s, w in scaled_targets.items()}
+                self.algorithm.Log(
+                    f"LAYER 3: Gross exposure {gross_after_scale:.1f}% exceeds {self.max_leverage_multiplier*100:.0f}%. "
+                    f"Scaling down by {hard_cap_factor:.2f}x to respect max leverage cap."
+                )
             
             if abs(vol_scaling_factor - 1.0) > 0.1:
                 # Defensive check for attribute existence (QuantConnect caching issue)
@@ -403,7 +467,7 @@ class LayerThreeRiskManager:
                     self.volatility_scalings = 0
                 self.volatility_scalings += 1
                 data_quality = portfolio_metrics.get('data_quality', 'unknown')
-                self.algorithm.Log(f"LAYER 3: Vol targeting ({data_quality}): {estimated_vol:.1%} -> {self.target_portfolio_vol:.1%} "
+                self.algorithm.Log(f"LAYER 3: Vol targeting ({data_quality}): {estimated_vol:.1%} -> {target_vol:.1%} "
                                  f"(scaling: {vol_scaling_factor:.2f}x)")
             
             return scaled_targets
